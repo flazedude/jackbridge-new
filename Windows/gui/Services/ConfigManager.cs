@@ -9,6 +9,7 @@ namespace JackBridge.GUI.Services;
 
 public class AppConfig
 {
+    public string ProxyEngine { get; set; } = "External";
     public string ProxyType { get; set; } = "SOCKS5";
     public string ProxyIp { get; set; } = "";
     public string ProxyPort { get; set; } = "";
@@ -20,7 +21,20 @@ public class AppConfig
     public bool IsTrafficLoggingEnabled { get; set; } = true;
     public string Language { get; set; } = "en";
     public bool CloseToTray { get; set; } = true;
+    public BuiltInProxyConfig BuiltInProxy { get; set; } = new();
     public List<ProxyRuleConfig> ProxyRules { get; set; } = new();
+}
+
+public class BuiltInProxyConfig
+{
+    public string CorePath { get; set; } = "core\\mihomo.exe";
+    public string SubscriptionUrl { get; set; } = "";
+    public string LocalYamlPath { get; set; } = "";
+    public string ActiveProfilePath { get; set; } = "profiles\\mihomo.yaml";
+    public string MixedPort { get; set; } = "7892";
+    public string ControllerPort { get; set; } = "9090";
+    public string ControllerSecret { get; set; } = "";
+    public bool AutoUpdateSubscription { get; set; } = false;
 }
 
 public class ProxyRuleConfig
@@ -35,6 +49,7 @@ public class ProxyRuleConfig
 }
 
 [JsonSerializable(typeof(AppConfig))]
+[JsonSerializable(typeof(BuiltInProxyConfig))]
 [JsonSerializable(typeof(ProxyRuleConfig))]
 [JsonSerializable(typeof(List<ProxyRuleConfig>))]
 internal partial class AppConfigJsonContext : JsonSerializerContext
@@ -126,6 +141,7 @@ public static class ConfigManager
             var config = JsonSerializer.Deserialize(json, AppConfigJsonContext.Default.AppConfig);
             if (config != null)
             {
+                config.BuiltInProxy ??= new BuiltInProxyConfig();
                 config.ProxyRules ??= new List<ProxyRuleConfig>();
                 return config;
             }

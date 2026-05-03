@@ -4,16 +4,30 @@ struct ProxySettingsView: View {
     @ObservedObject var viewModel: JackBridgeViewModel
     @Environment(\.dismiss) private var dismiss
     
+    @State private var proxyEngine = JackBridgeViewModel.ProxyEngine.external
     @State private var proxyType = ""
     @State private var proxyHost = ""
     @State private var proxyPort = ""
     @State private var username = ""
     @State private var password = ""
+    @State private var corePath = ""
+    @State private var subscriptionUrl = ""
+    @State private var localYamlPath = ""
+    @State private var activeProfilePath = ""
+    @State private var mixedPort = ""
+    @State private var controllerPort = ""
+    @State private var autoUpdateSubscription = false
     @State private var validationError = ""
+    @State private var profileStatus = ""
+    @State private var isRefreshingProfile = false
     
     private let proxyTypes = ["http", "socks5"]
     private var isSaveDisabled: Bool {
-        proxyType.isEmpty || proxyHost.isEmpty || proxyPort.isEmpty || !validationError.isEmpty
+        if !validationError.isEmpty { return true }
+        if proxyEngine == .builtIn {
+            return mixedPort.isEmpty || controllerPort.isEmpty || (subscriptionUrl.isEmpty && localYamlPath.isEmpty)
+        }
+        return proxyType.isEmpty || proxyHost.isEmpty || proxyPort.isEmpty
     }
     
     var body: some View {
@@ -23,7 +37,7 @@ struct ProxySettingsView: View {
             Divider()
             footerButtons
         }
-        .frame(width: 600, height: 600)
+        .frame(width: 680, height: 760)
         .onAppear(perform: loadCurrentSettings)
     }
     
@@ -44,13 +58,51 @@ struct ProxySettingsView: View {
     private var formContent: some View {
         Form {
             Section {
-                formPicker(label: "Proxy Type", selection: $proxyType, required: true)
-                formTextField(label: "Proxy IP/Domain", placeholder: "127.0.0.1 or proxy.example.com", text: $proxyHost, required: true)
-                    .onChange(of: proxyHost) { _ in validateInputs() }
-                formTextField(label: "Proxy Port", placeholder: "8080", text: $proxyPort, required: true)
-                    .onChange(of: proxyPort) { _ in validateInputs() }
-                formTextField(label: "Username", placeholder: "Leave empty if no auth required", text: $username)
-                formSecureField(label: "Password", placeholder: "Leave empty if no auth required", text: $password)
+                Picker("Proxy Engine", selection: $proxyEngine) {
+                    Text("External Proxy").tag(JackBridgeViewModel.ProxyEngine.external)
+                    Text("Built-in Proxy").tag(JackBridgeViewModel.ProxyEngine.builtIn)
+                }
+                .pickerStyle(.segmented)
+                .onChange(of: proxyEngine) { _ in validateInputs() }
+            }
+
+            Section {
+                if proxyEngine == .external {
+                    formPicker(label: "Proxy Type", selection: $proxyType, required: true)
+                    formTextField(label: "Proxy IP/Domain", placeholder: "127.0.0.1 or proxy.example.com", text: $proxyHost, required: true)
+                        .onChange(of: proxyHost) { _ in validateInputs() }
+                    formTextField(label: "Proxy Port", placeholder: "8080", text: $proxyPort, required: true)
+                        .onChange(of: proxyPort) { _ in validateInputs() }
+                    formTextField(label: "Username", placeholder: "Leave empty if no auth required", text: $username)
+                    formSecureField(label: "Password", placeholder: "Leave empty if no auth required", text: $password)
+                } else {
+                    formTextField(label: "Core Path", placeholder: "core/mihomo", text: $corePath, required: true)
+                    formTextField(label: "Subscription URL", placeholder: "https://example.com/subscription", text: $subscriptionUrl)
+                        .onChange(of: subscriptionUrl) { _ in validateInputs() }
+                    formTextField(label: "Local YAML Path", placeholder: "profiles/custom.yaml or /path/config.yaml", text: $localYamlPath)
+                        .onChange(of: localYamlPath) { _ in validateInputs() }
+                    formTextField(label: "Active Profile", placeholder: "profiles/mihomo.yaml", text: $activeProfilePath, required: true)
+                    formTextField(label: "Mixed Port", placeholder: "7892", text: $mixedPort, required: true)
+                        .onChange(of: mixedPort) { _ in validateInputs() }
+                    formTextField(label: "Controller Port", placeholder: "9090", text: $controllerPort, required: true)
+                        .onChange(of: controllerPort) { _ in validateInputs() }
+                    Toggle("Auto update subscription", isOn: $autoUpdateSubscription)
+
+                    HStack {
+                        Button(isRefreshingProfile ? "Updating..." : "Update Profile Now") {
+                            refreshProfile()
+                        }
+                        .disabled(isRefreshingProfile)
+
+                        if !profileStatus.isEmpty {
+                            Text(profileStatus)
+                                .font(.caption)
+                                .foregroundColor(profileStatus.hasPrefix("ERROR") ? .red : .secondary)
+                                .lineLimit(2)
+                        }
+                    }
+                    .padding(.top, 4)
+                }
                 
                 if !validationError.isEmpty {
                     HStack {
@@ -143,6 +195,8 @@ struct ProxySettingsView: View {
     }
     
     private func loadCurrentSettings() {
+        proxyEngine = viewModel.proxyEngine
+
         if let config = viewModel.proxyConfig {
             proxyType = config.type
             proxyHost = config.host
@@ -150,10 +204,53 @@ struct ProxySettingsView: View {
             username = config.username ?? ""
             password = config.password ?? ""
         }
+
+        let builtIn = viewModel.builtInProxyConfig
+        corePath = builtIn.corePath
+        subscriptionUrl = builtIn.subscriptionUrl
+        localYamlPath = builtIn.localYamlPath
+        activeProfilePath = builtIn.activeProfilePath
+        mixedPort = String(builtIn.mixedPort)
+        controllerPort = String(builtIn.controllerPort)
+        autoUpdateSubscription = builtIn.autoUpdateSubscription
         validateInputs()
     }
     
     private func validateInputs() {
+        if proxyEngine == .builtIn {
+            if subscriptionUrl.isEmpty && localYamlPath.isEmpty {
+                validationError = "Add a subscription URL or local YAML profile"
+                return
+            }
+
+            if !mixedPort.isEmpty {
+                if let port = Int(mixedPort) {
+                    if port < 1 || port > 65535 {
+                        validationError = "Mixed port must be between 1 and 65535"
+                        return
+                    }
+                } else {
+                    validationError = "Mixed port must be a valid number"
+                    return
+                }
+            }
+
+            if !controllerPort.isEmpty {
+                if let port = Int(controllerPort) {
+                    if port < 1 || port > 65535 {
+                        validationError = "Controller port must be between 1 and 65535"
+                        return
+                    }
+                } else {
+                    validationError = "Controller port must be a valid number"
+                    return
+                }
+            }
+
+            validationError = ""
+            return
+        }
+
         if !proxyHost.isEmpty && !isValidHost(proxyHost) {
             validationError = "Invalid proxy IP/domain"
             return
@@ -214,16 +311,47 @@ struct ProxySettingsView: View {
     }
     
     private func saveSettings() {
-        guard let port = Int(proxyPort) else { return }
-        
-        let config = JackBridgeViewModel.ProxyConfig(
-            type: proxyType,
-            host: proxyHost,
-            port: port,
-            username: username.isEmpty ? nil : username,
-            password: password.isEmpty ? nil : password
-        )
-        
-        viewModel.setProxyConfig(config)
+        if proxyEngine == .builtIn {
+            guard let config = makeBuiltInConfig() else { return }
+            viewModel.setBuiltInProxyConfig(config)
+        } else {
+            guard let port = Int(proxyPort) else { return }
+
+            let config = JackBridgeViewModel.ProxyConfig(
+                type: proxyType,
+                host: proxyHost,
+                port: port,
+                username: username.isEmpty ? nil : username,
+                password: password.isEmpty ? nil : password
+            )
+
+            viewModel.setProxyConfig(config)
+        }
+    }
+
+    private func refreshProfile() {
+        guard let config = makeBuiltInConfig() else { return }
+        viewModel.saveBuiltInProxySettings(config)
+        isRefreshingProfile = true
+        profileStatus = "Updating profile..."
+        viewModel.refreshBuiltInProfile { success, message in
+            isRefreshingProfile = false
+            profileStatus = success ? message : "ERROR: \(message)"
+        }
+    }
+
+    private func makeBuiltInConfig() -> JackBridgeViewModel.BuiltInProxyConfig? {
+        guard let mixed = Int(mixedPort),
+              let controller = Int(controllerPort) else { return nil }
+
+        var config = viewModel.builtInProxyConfig
+        config.corePath = corePath.isEmpty ? "core/mihomo" : corePath
+        config.subscriptionUrl = subscriptionUrl
+        config.localYamlPath = localYamlPath
+        config.activeProfilePath = activeProfilePath.isEmpty ? "profiles/mihomo.yaml" : activeProfilePath
+        config.mixedPort = mixed
+        config.controllerPort = controller
+        config.autoUpdateSubscription = autoUpdateSubscription
+        return config
     }
 }

@@ -3,7 +3,7 @@
 set -e
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-VERSION="3.2.0"
+VERSION="2.0.0-beta"
 
 if [ -f "$SCRIPT_DIR/.env" ]; then
     source "$SCRIPT_DIR/.env"
@@ -26,11 +26,11 @@ echo "Creating installer package..."
 pkgbuild \
     --root build/component \
     --identifier com.interceptsuite.JackBridge \
-    --version 3.2.0 \
+    --version "$VERSION" \
     --install-location /Applications \
     build/temp.pkg
 
-cat > build/distribution.xml << 'EOF'
+cat > build/distribution.xml << EOF
 <?xml version="1.0" encoding="utf-8"?>
 <installer-gui-script minSpecVersion="1">
     <title>JackBridge</title>
@@ -45,7 +45,7 @@ cat > build/distribution.xml << 'EOF'
     <choice id="com.interceptsuite.JackBridge" visible="false">
         <pkg-ref id="com.interceptsuite.JackBridge"/>
     </choice>
-    <pkg-ref id="com.interceptsuite.JackBridge" version="3.2.0" onConclusion="none">temp.pkg</pkg-ref>
+    <pkg-ref id="com.interceptsuite.JackBridge" version="$VERSION" onConclusion="none">temp.pkg</pkg-ref>
 </installer-gui-script>
 EOF
 

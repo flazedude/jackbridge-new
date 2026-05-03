@@ -7,14 +7,14 @@
     <ApplicationManifest>app.manifest</ApplicationManifest>
     <AssemblyName>JackBridge</AssemblyName>
     <RootNamespace>JackBridge.GUI</RootNamespace>
-    <Version>1.5.0</Version>
-    <AssemblyVersion>1.5.0</AssemblyVersion>
-    <FileVersion>1.5.0</FileVersion>
-    <InformationalVersion>1.5.0</InformationalVersion>
+    <Version>2.0.0</Version>
+    <AssemblyVersion>2.0.0</AssemblyVersion>
+    <FileVersion>2.0.0</FileVersion>
+    <InformationalVersion>2.0.0-beta</InformationalVersion>
     <IncludeSourceRevisionInInformationalVersion>false</IncludeSourceRevisionInInformationalVersion>
     <ApplicationIcon>Assets\logo.ico</ApplicationIcon>
     <Company>InterceptSuite</Company>
-    <Product>JackBridge v1.5</Product>
+    <Product>JackBridge v2.0 Beta</Product>
     <Copyright>Copyright © 2026 InterceptSuite</Copyright>
     <Description>Universal proxy client for Windows applications</Description>
     <NeutralLanguage>en-US</NeutralLanguage>

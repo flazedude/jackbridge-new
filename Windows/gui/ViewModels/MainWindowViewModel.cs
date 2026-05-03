@@ -19,7 +19,7 @@ public class MainWindowViewModel : ViewModelBase
     private const int MAX_CONNECTION_LOG_LINES = 100;
     private const int MAX_ACTIVITY_LOG_LINES = 100;
 
-    private string _title = "JackBridge v1.5";
+    private string _title = "JackBridge v2.0 Beta";
     private int _selectedTabIndex;
     private string _connectionsLog = "";
     private string _activityLog = "";
@@ -41,6 +41,7 @@ public class MainWindowViewModel : ViewModelBase
     private bool _isProxyEnabled = false;
     private Window? _mainWindow;
     private JackBridgeService? _proxyService;
+    private MihomoService? _mihomoService;
     private bool _isServiceInitialized = false;
     private readonly SettingsService _settingsService = new SettingsService();
 
@@ -49,6 +50,8 @@ public class MainWindowViewModel : ViewModelBase
     private string _currentProxyPort = "";
     private string _currentProxyUsername = "";
     private string _currentProxyPassword = "";
+    private string _proxyEngine = "External";
+    private BuiltInProxyConfig _builtInProxy = new();
 
     public ObservableCollection<ObservedProcessRuleCandidate> ObservedProcesses { get; } = new();
     public bool HasObservedProcesses => ObservedProcesses.Count > 0;
@@ -73,6 +76,7 @@ public class MainWindowViewModel : ViewModelBase
         try
         {
             _proxyService = new JackBridgeService();
+            _mihomoService = new MihomoService();
             _proxyService.LogReceived += (msg) =>
             {
                 lock (_activityLogLock)
@@ -379,6 +383,7 @@ public class MainWindowViewModel : ViewModelBase
                     }
                     else
                     {
+                        _mihomoService?.Stop(QueueActivityLog);
                         if (_proxyService.Stop())
                             QueueActivityLog("Proxy disabled");
                         else
@@ -453,30 +458,43 @@ public class MainWindowViewModel : ViewModelBase
         ShowProxySettingsCommand = new RelayCommand(() =>
         {
             var viewModel = new ProxySettingsViewModel(
+                initialEngine: _proxyEngine,
                 initialType: _currentProxyType,
                 initialIp: _currentProxyIp,
                 initialPort: _currentProxyPort,
                 initialUsername: _currentProxyUsername,
                 initialPassword: _currentProxyPassword,
-                onSave: (type, ip, port, username, password) =>
+                initialBuiltInProxy: _builtInProxy,
+                onSave: (settings) =>
                 {
-                    if (_proxyService != null && ushort.TryParse(port, out ushort portNum))
-                    {
-                        if (_proxyService.SetProxyConfig(type, ip, portNum, username, password))
-                        {
-                            _currentProxyType = type;
-                            _currentProxyIp = ip;
-                            _currentProxyPort = port;
-                            _currentProxyUsername = username;
-                            _currentProxyPassword = password;
+                    _proxyEngine = settings.ProxyEngine;
+                    _currentProxyType = settings.ProxyType;
+                    _currentProxyIp = settings.ProxyIp;
+                    _currentProxyPort = settings.ProxyPort;
+                    _currentProxyUsername = settings.ProxyUsername;
+                    _currentProxyPassword = settings.ProxyPassword;
+                    _builtInProxy = settings.BuiltInProxy;
 
-                            SaveConfigurationInternal();
-                        }
-                        else
+                    if (_proxyService != null && !_proxyEngine.Equals("BuiltIn", StringComparison.OrdinalIgnoreCase) && ushort.TryParse(_currentProxyPort, out ushort portNum))
+                    {
+                        if (!_proxyService.SetProxyConfig(_currentProxyType, _currentProxyIp, portNum, _currentProxyUsername, _currentProxyPassword))
                         {
                             QueueActivityLog("ERROR: Failed to set proxy config");
                         }
                     }
+
+                    if (_isProxyEnabled)
+                    {
+                        _proxyService?.Stop();
+                        _mihomoService?.Stop(QueueActivityLog);
+                        ApplyProxyRuntimeConfiguration();
+                        if (StartProxyService())
+                            QueueActivityLog("Proxy settings applied");
+                        else
+                            QueueActivityLog("ERROR: Failed to apply proxy settings");
+                    }
+
+                    SaveConfigurationInternal();
                     ClosePanel();
                 },
                 onClose: () =>
@@ -486,7 +504,7 @@ public class MainWindowViewModel : ViewModelBase
                 proxyService: _proxyService
             );
 
-            OpenPanel(viewModel, 540);
+            OpenPanel(viewModel, 640);
         });
 
         ShowProxyRulesCommand = new RelayCommand(() =>
@@ -528,7 +546,7 @@ public class MainWindowViewModel : ViewModelBase
 
             rulesWindow = new Window
             {
-                Title = "Process Rules - JackBridge v1.5",
+                Title = "Process Rules - JackBridge v2.0 Beta",
                 Width = 720,
                 Height = 560,
                 MinWidth = 640,
@@ -793,15 +811,23 @@ public class MainWindowViewModel : ViewModelBase
             return;
         }
 
-        ObservedProcesses.Add(new ObservedProcessRuleCandidate
+        ObservedProcessRuleCandidate? createdCandidate = null;
+        createdCandidate = new ObservedProcessRuleCandidate
         {
             ProcessName = executableName,
             ProcessId = pid,
             TargetHost = destIp,
             TargetPort = destPort,
             LastSeen = DateTime.Now,
-            HitCount = 1
-        });
+            HitCount = 1,
+            AddRuleCommand = new RelayCommand(() =>
+            {
+                if (createdCandidate != null)
+                    AddRuleFromObservedProcess(createdCandidate);
+            })
+        };
+
+        ObservedProcesses.Add(createdCandidate);
 
         while (ObservedProcesses.Count > 24)
         {
@@ -895,6 +921,7 @@ public class MainWindowViewModel : ViewModelBase
     public void Cleanup()
     {
         try { SaveConfigurationInternal(); } catch { }
+        try { _mihomoService?.Dispose(); _mihomoService = null; } catch { }
         try { _proxyService?.Dispose(); _proxyService = null; } catch { }
     }
 
@@ -905,6 +932,15 @@ public class MainWindowViewModel : ViewModelBase
 
         _proxyService.SetDnsViaProxy(_dnsViaProxy);
         _proxyService.SetLocalhostViaProxy(_localhostViaProxy);
+
+        if (_proxyEngine.Equals("BuiltIn", StringComparison.OrdinalIgnoreCase))
+        {
+            if (ushort.TryParse(_builtInProxy.MixedPort, out ushort builtInPort))
+            {
+                _proxyService.SetProxyConfig("SOCKS5", "127.0.0.1", builtInPort, "", "");
+            }
+            return;
+        }
 
         if (!string.IsNullOrEmpty(_currentProxyIp) &&
             !string.IsNullOrEmpty(_currentProxyPort) &&
@@ -956,6 +992,15 @@ public class MainWindowViewModel : ViewModelBase
         if (_proxyService == null)
             return false;
 
+        if (_proxyEngine.Equals("BuiltIn", StringComparison.OrdinalIgnoreCase))
+        {
+            _mihomoService ??= new MihomoService();
+            if (!_mihomoService.StartAsync(_builtInProxy, QueueActivityLog).GetAwaiter().GetResult())
+                return false;
+
+            ApplyProxyRuntimeConfiguration();
+        }
+
         LoadRulesIntoNativeService();
         return _proxyService.Start();
     }
@@ -989,11 +1034,13 @@ public class MainWindowViewModel : ViewModelBase
 
             var config = ConfigManager.LoadConfig();
 
+            _proxyEngine = string.IsNullOrWhiteSpace(config.ProxyEngine) ? "External" : config.ProxyEngine;
             _currentProxyType = ValidationHelper.DefaultIfEmpty(config.ProxyType, "SOCKS5");
             _currentProxyIp = ValidationHelper.DefaultIfEmpty(config.ProxyIp, "");
             _currentProxyPort = ValidationHelper.DefaultIfEmpty(config.ProxyPort, "");
             _currentProxyUsername = config.ProxyUsername ?? "";
             _currentProxyPassword = config.ProxyPassword ?? "";
+            _builtInProxy = config.BuiltInProxy ?? new BuiltInProxyConfig();
 
             DnsViaProxy = config.DnsViaProxy;
             LocalhostViaProxy = config.LocalhostViaProxy;
@@ -1050,6 +1097,7 @@ public class MainWindowViewModel : ViewModelBase
         {
             var config = new AppConfig
             {
+                ProxyEngine = _proxyEngine,
                 ProxyType = _currentProxyType,
                 ProxyIp = _currentProxyIp,
                 ProxyPort = _currentProxyPort,
@@ -1061,6 +1109,7 @@ public class MainWindowViewModel : ViewModelBase
                 IsTrafficLoggingEnabled = _isTrafficLoggingEnabled,
                 Language = _currentLanguage,
                 CloseToTray = _closeToTray,
+                BuiltInProxy = _builtInProxy,
                 ProxyRules = ProxyRules.Select(r => new ProxyRuleConfig
                 {
                     ProcessName = r.ProcessName,
@@ -1188,6 +1237,7 @@ public class ObservedProcessRuleCandidate : ViewModelBase
     private DateTime _lastSeen;
 
     public string ProcessName { get; set; } = "";
+    public ICommand? AddRuleCommand { get; set; }
 
     public string TargetHost
     {

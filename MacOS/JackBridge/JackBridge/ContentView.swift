@@ -19,7 +19,7 @@ struct ContentView: View {
     
     private var headerView: some View {
         HStack {
-            Text("JackBridge")
+            Text("JackBridge v2.0 Beta")
                 .font(.headline)
                 .padding(.leading)
             Spacer()

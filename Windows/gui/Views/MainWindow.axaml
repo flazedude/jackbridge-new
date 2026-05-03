@@ -477,8 +477,7 @@
                                                                 Grid.RowSpan="2"
                                                                 Grid.Column="1"
                                                                 Content="Add Rule"
-                                                                Command="{Binding $parent[ItemsControl].((vm:MainWindowViewModel)DataContext).AddObservedProcessRuleCommand}"
-                                                                CommandParameter="{Binding}"
+                                                                Command="{Binding AddRuleCommand}"
                                                                 Padding="10,5"
                                                                 Margin="10,0,0,0"/>
                                                         <StackPanel Grid.Row="1"

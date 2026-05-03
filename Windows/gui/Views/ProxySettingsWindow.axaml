@@ -3,7 +3,7 @@
         xmlns:vm="using:JackBridge.GUI.ViewModels"
         xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
         xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
-        mc:Ignorable="d" d:DesignWidth="500" d:DesignHeight="650"
+        mc:Ignorable="d" d:DesignWidth="620" d:DesignHeight="760"
         x:Class="JackBridge.GUI.Views.ProxySettingsWindow"
         x:DataType="vm:ProxySettingsViewModel"
         x:CompileBindings="True"
@@ -13,7 +13,7 @@
         <Border DockPanel.Dock="Top" Background="#FF1E1E1E" Padding="20,16">
             <StackPanel Orientation="Horizontal" Spacing="10">
                 <Image Source="/Assets/nav-settings.png" Width="22" Height="22" VerticalAlignment="Center"/>
-                <TextBlock Text="{Binding Loc.ProxySettingsTitle}"
+                <TextBlock Text="Proxy Settings"
                            FontSize="18"
                            FontWeight="SemiBold"
                            Foreground="#FFE0E0E0"
@@ -23,90 +23,132 @@
 
         <ScrollViewer VerticalScrollBarVisibility="Auto"
                       HorizontalScrollBarVisibility="Disabled">
-            <StackPanel Margin="24,20" Spacing="20">
-                <StackPanel Spacing="6">
-                    <TextBlock Text="{Binding Loc.ProxyTypeLabel}" Classes="label"/>
-                    <ComboBox HorizontalAlignment="Stretch"
-                              x:Name="ProxyTypeComboBox">
-                        <ComboBoxItem Content="SOCKS5" Tag="SOCKS5"/>
-                        <ComboBoxItem Content="HTTP" Tag="HTTP"/>
-                    </ComboBox>
+            <StackPanel Margin="24,20" Spacing="18">
+                <StackPanel Spacing="8">
+                    <TextBlock Text="Proxy engine" Classes="label"/>
+                    <Border Background="#FF1E1E1E"
+                            BorderBrush="#FF3F3F46"
+                            BorderThickness="1"
+                            CornerRadius="4"
+                            Padding="4">
+                        <Grid ColumnDefinitions="*,*">
+                            <Button Grid.Column="0"
+                                    Content="External Proxy"
+                                    Command="{Binding UseExternalProxyCommand}"
+                                    Classes="secondary"
+                                    Margin="0,0,4,0"
+                                    IsEnabled="{Binding IsBuiltInProxy}"/>
+                            <Button Grid.Column="1"
+                                    Content="Built-in Proxy"
+                                    Command="{Binding UseBuiltInProxyCommand}"
+                                    Classes="secondary"
+                                    Margin="4,0,0,0"
+                                    IsEnabled="{Binding IsExternalProxy}"/>
+                        </Grid>
+                    </Border>
                 </StackPanel>
-
-                <StackPanel Spacing="6">
-                    <TextBlock Text="{Binding Loc.ProxyIpLabel}" Classes="label"/>
-                    <TextBox Text="{Binding ProxyIp}"
-                             Watermark="{Binding Loc.ProxyIpPlaceholder}"/>
-                    <TextBlock Text="{Binding IpError}"
-                               Classes="error"
-                               IsVisible="{Binding IpError, Converter={x:Static StringConverters.IsNotNullOrEmpty}}"/>
-                </StackPanel>
-
-                <StackPanel Spacing="6">
-                    <TextBlock Text="{Binding Loc.ProxyPortLabel}" Classes="label"/>
-                    <TextBox Text="{Binding ProxyPort}"
-                             Watermark="{Binding Loc.ProxyPortPlaceholder}"/>
-                    <TextBlock Text="{Binding PortError}"
-                               Classes="error"
-                               IsVisible="{Binding PortError, Converter={x:Static StringConverters.IsNotNullOrEmpty}}"/>
-                </StackPanel>
-
-                <StackPanel Spacing="6">
-                    <TextBlock Text="{Binding Loc.UsernameLabel}" Classes="label"/>
-                    <TextBox Text="{Binding ProxyUsername}"
-                             Watermark="{Binding Loc.UsernamePlaceholder}"/>
-                </StackPanel>
-
-                <StackPanel Spacing="6">
-                    <TextBlock Text="{Binding Loc.PasswordLabel}" Classes="label"/>
-                    <TextBox Text="{Binding ProxyPassword}"
-                             Watermark="{Binding Loc.PasswordPlaceholder}"
-                             PasswordChar="*"/>
-                </StackPanel>
-
-                <TextBlock Text="{Binding Loc.RequiredFieldsNote}"
-                           Foreground="#FF999999"
-                           FontSize="12"
-                           Margin="0,8,0,0"/>
 
                 <Border BorderBrush="#FF3F3F46"
-                        BorderThickness="0,1,0,0"
-                        Padding="0,16,0,0"
-                        Margin="0,16,0,0"
-                        IsVisible="{Binding !IsTestViewOpen}">
-                    <StackPanel Spacing="12">
-                        <TextBlock Text="{Binding Loc.TestConnectionTitle}"
+                        BorderThickness="1"
+                        CornerRadius="4"
+                        Padding="16"
+                        IsVisible="{Binding IsExternalProxy}">
+                    <StackPanel Spacing="14">
+                        <TextBlock Text="External proxy"
                                    FontSize="14"
-                                   FontWeight="SemiBold"
-                                   Foreground="#FFE0E0E0"/>
-                        <Button Content="{Binding Loc.TestConnectionButton}"
-                                Command="{Binding OpenTestCommand}"
-                                Classes="secondary"
-                                HorizontalAlignment="Left"/>
+                                   FontWeight="SemiBold"/>
+                        <StackPanel Spacing="6">
+                            <TextBlock Text="{Binding Loc.ProxyTypeLabel}" Classes="label"/>
+                            <ComboBox HorizontalAlignment="Stretch" x:Name="ProxyTypeComboBox">
+                                <ComboBoxItem Content="SOCKS5" Tag="SOCKS5"/>
+                                <ComboBoxItem Content="HTTP" Tag="HTTP"/>
+                            </ComboBox>
+                        </StackPanel>
+                        <StackPanel Spacing="6">
+                            <TextBlock Text="{Binding Loc.ProxyIpLabel}" Classes="label"/>
+                            <TextBox Text="{Binding ProxyIp}" Watermark="{Binding Loc.ProxyIpPlaceholder}"/>
+                            <TextBlock Text="{Binding IpError}" Classes="error" IsVisible="{Binding IpError, Converter={x:Static StringConverters.IsNotNullOrEmpty}}"/>
+                        </StackPanel>
+                        <StackPanel Spacing="6">
+                            <TextBlock Text="{Binding Loc.ProxyPortLabel}" Classes="label"/>
+                            <TextBox Text="{Binding ProxyPort}" Watermark="{Binding Loc.ProxyPortPlaceholder}"/>
+                            <TextBlock Text="{Binding PortError}" Classes="error" IsVisible="{Binding PortError, Converter={x:Static StringConverters.IsNotNullOrEmpty}}"/>
+                        </StackPanel>
+                        <StackPanel Spacing="6">
+                            <TextBlock Text="{Binding Loc.UsernameLabel}" Classes="label"/>
+                            <TextBox Text="{Binding ProxyUsername}" Watermark="{Binding Loc.UsernamePlaceholder}"/>
+                        </StackPanel>
+                        <StackPanel Spacing="6">
+                            <TextBlock Text="{Binding Loc.PasswordLabel}" Classes="label"/>
+                            <TextBox Text="{Binding ProxyPassword}" Watermark="{Binding Loc.PasswordPlaceholder}" PasswordChar="*"/>
+                        </StackPanel>
                     </StackPanel>
                 </Border>
 
                 <Border BorderBrush="#FF3F3F46"
-                        BorderThickness="0,1,0,0"
-                        Padding="0,16,0,0"
-                        Margin="0,16,0,0"
-                        IsVisible="{Binding IsTestViewOpen}">
+                        BorderThickness="1"
+                        CornerRadius="4"
+                        Padding="16"
+                        IsVisible="{Binding IsBuiltInProxy}">
+                    <StackPanel Spacing="14">
+                        <TextBlock Text="Built-in mihomo proxy" FontSize="14" FontWeight="SemiBold"/>
+                        <StackPanel Spacing="6">
+                            <TextBlock Text="Core path" Classes="label"/>
+                            <TextBox Text="{Binding CorePath}" Watermark="core\mihomo.exe"/>
+                        </StackPanel>
+                        <StackPanel Spacing="6">
+                            <TextBlock Text="Subscription URL" Classes="label"/>
+                            <TextBox Text="{Binding SubscriptionUrl}" Watermark="https://example.com/subscription"/>
+                        </StackPanel>
+                        <StackPanel Spacing="6">
+                            <TextBlock Text="Local YAML path" Classes="label"/>
+                            <TextBox Text="{Binding LocalYamlPath}" Watermark="profiles\custom.yaml or C:\path\config.yaml"/>
+                        </StackPanel>
+                        <Grid ColumnDefinitions="*,*" ColumnSpacing="12">
+                            <StackPanel Grid.Column="0" Spacing="6">
+                                <TextBlock Text="Active profile" Classes="label"/>
+                                <TextBox Text="{Binding ActiveProfilePath}" Watermark="profiles\mihomo.yaml"/>
+                            </StackPanel>
+                            <StackPanel Grid.Column="1" Spacing="6">
+                                <TextBlock Text="Mixed port" Classes="label"/>
+                                <TextBox Text="{Binding MixedPort}" Watermark="7892"/>
+                            </StackPanel>
+                        </Grid>
+                        <Grid ColumnDefinitions="*,Auto" ColumnSpacing="12">
+                            <StackPanel Grid.Column="0" Spacing="6">
+                                <TextBlock Text="Controller port" Classes="label"/>
+                                <TextBox Text="{Binding ControllerPort}" Watermark="9090"/>
+                            </StackPanel>
+                            <CheckBox Grid.Column="1"
+                                      Content="Auto update"
+                                      IsChecked="{Binding AutoUpdateSubscription}"
+                                      VerticalAlignment="Bottom"
+                                      Margin="0,0,0,8"/>
+                        </Grid>
+                        <Button Content="Update Profile Now"
+                                Command="{Binding RefreshProfileCommand}"
+                                IsEnabled="{Binding !IsTesting}"
+                                HorizontalAlignment="Left"/>
+                        <TextBlock Text="{Binding BuiltInError}"
+                                   Classes="error"
+                                   TextWrapping="Wrap"
+                                   IsVisible="{Binding BuiltInError, Converter={x:Static StringConverters.IsNotNullOrEmpty}}"/>
+                    </StackPanel>
+                </Border>
+
+                <Border BorderBrush="#FF3F3F46" BorderThickness="0,1,0,0" Padding="0,16,0,0" Margin="0,6,0,0" IsVisible="{Binding !IsTestViewOpen}">
+                    <StackPanel Spacing="12">
+                        <TextBlock Text="{Binding Loc.TestConnectionTitle}" FontSize="14" FontWeight="SemiBold"/>
+                        <Button Content="{Binding Loc.TestConnectionButton}" Command="{Binding OpenTestCommand}" Classes="secondary" HorizontalAlignment="Left"/>
+                    </StackPanel>
+                </Border>
+
+                <Border BorderBrush="#FF3F3F46" BorderThickness="0,1,0,0" Padding="0,16,0,0" Margin="0,6,0,0" IsVisible="{Binding IsTestViewOpen}">
                     <StackPanel Spacing="12">
                         <Grid ColumnDefinitions="*,Auto">
-                            <TextBlock Text="{Binding Loc.TestConnectionTitle}"
-                                       FontSize="14"
-                                       FontWeight="SemiBold"
-                                       Foreground="#FFE0E0E0"
-                                       VerticalAlignment="Center"/>
-                            <Button Grid.Column="1"
-                                    Content="X"
-                                    Classes="secondary"
-                                    Command="{Binding CloseTestCommand}"
-                                    Width="32"
-                                    Height="32"
-                                    Padding="0"/>
+                            <TextBlock Text="{Binding Loc.TestConnectionTitle}" FontSize="14" FontWeight="SemiBold" VerticalAlignment="Center"/>
+                            <Button Grid.Column="1" Content="X" Classes="secondary" Command="{Binding CloseTestCommand}" Width="32" Height="32" Padding="0"/>
                         </Grid>
-
                         <Grid ColumnDefinitions="3*,2*" ColumnSpacing="12">
                             <StackPanel Grid.Column="0" Spacing="6">
                                 <TextBlock Text="{Binding Loc.TargetHostLabel}" Classes="label"/>
@@ -117,43 +159,21 @@
                                 <TextBox Text="{Binding TestTargetPort}"/>
                             </StackPanel>
                         </Grid>
-
-                        <Button Content="{Binding Loc.StartTestButton}"
-                                Command="{Binding StartTestCommand}"
-                                IsEnabled="{Binding !IsTesting}"
-                                HorizontalAlignment="Left"/>
-
+                        <Button Content="{Binding Loc.StartTestButton}" Command="{Binding StartTestCommand}" IsEnabled="{Binding !IsTesting}" HorizontalAlignment="Left"/>
                         <StackPanel Spacing="6">
                             <TextBlock Text="{Binding Loc.OutputLabel}" Classes="label"/>
-                            <Border Background="#FF1E1E1E"
-                                    BorderBrush="#FF3F3F46"
-                                    BorderThickness="1"
-                                    Padding="10"
-                                    MinHeight="150"
-                                    MaxHeight="200">
+                            <Border Background="#FF1E1E1E" BorderBrush="#FF3F3F46" BorderThickness="1" Padding="10" MinHeight="140" MaxHeight="200">
                                 <ScrollViewer VerticalScrollBarVisibility="Auto">
-                                    <TextBlock Text="{Binding TestOutput}"
-                                               FontFamily="Consolas,monospace"
-                                               FontSize="12"
-                                               Foreground="#FFE0E0E0"
-                                               TextWrapping="Wrap"/>
+                                    <TextBlock Text="{Binding TestOutput}" FontFamily="Consolas,monospace" FontSize="12" TextWrapping="Wrap"/>
                                 </ScrollViewer>
                             </Border>
                         </StackPanel>
                     </StackPanel>
                 </Border>
 
-                <StackPanel Orientation="Horizontal"
-                            HorizontalAlignment="Right"
-                            Spacing="12"
-                            Margin="0,16,0,20">
-                    <Button Content="{Binding Loc.ButtonCancel}"
-                            Classes="secondary"
-                            Command="{Binding CancelCommand}"
-                            Width="100"/>
-                    <Button Content="{Binding Loc.SaveChangesButton}"
-                            Command="{Binding SaveCommand}"
-                            Width="130"/>
+                <StackPanel Orientation="Horizontal" HorizontalAlignment="Right" Spacing="12" Margin="0,10,0,20">
+                    <Button Content="{Binding Loc.ButtonCancel}" Classes="secondary" Command="{Binding CancelCommand}" Width="100"/>
+                    <Button Content="{Binding Loc.SaveChangesButton}" Command="{Binding SaveCommand}" Width="130"/>
                 </StackPanel>
             </StackPanel>
         </ScrollViewer>

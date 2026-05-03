@@ -4,14 +4,22 @@ import SystemExtensions
 import Combine
 
 class JackBridgeViewModel: NSObject, ObservableObject {
+    enum ProxyEngine: String {
+        case external
+        case builtIn
+    }
+
     @Published var connections: [ConnectionLog] = []
     @Published var activityLogs: [ActivityLog] = []
     @Published var isProxyActive = false
     @Published var isTrafficLoggingEnabled = true
+    @Published var proxyEngine: ProxyEngine = .external
+    @Published var builtInProxyConfig = BuiltInProxyConfig()
     
     var tunnelSession: NETunnelProviderSession?
     private var logTimer: Timer?
     private(set) var proxyConfig: ProxyConfig?
+    private var mihomoProcess: Process?
     
     private let maxLogEntries = 1000
     // trim to 80% when limit hit to avoid trimming on each entry
@@ -36,6 +44,17 @@ class JackBridgeViewModel: NSObject, ObservableObject {
         let username: String?
         let password: String?
     }
+
+    struct BuiltInProxyConfig {
+        var corePath: String = "core/mihomo"
+        var subscriptionUrl: String = ""
+        var localYamlPath: String = ""
+        var activeProfilePath: String = "profiles/mihomo.yaml"
+        var mixedPort: Int = 7892
+        var controllerPort: Int = 9090
+        var controllerSecret: String = ""
+        var autoUpdateSubscription: Bool = false
+    }
     
     struct ConnectionLog: Identifiable {
         let id: Int
@@ -57,6 +76,7 @@ class JackBridgeViewModel: NSObject, ObservableObject {
     override init() {
         super.init()
         loadTrafficLoggingSetting()
+        loadProxyEngineConfig()
         loadProxyConfig()
         installAndStartProxy()
     }
@@ -106,6 +126,43 @@ class JackBridgeViewModel: NSObject, ObservableObject {
                 password: password
             )
         }
+    }
+
+    private func loadProxyEngineConfig() {
+        if let storedEngine = UserDefaults.standard.string(forKey: "proxyEngine"),
+           let engine = ProxyEngine(rawValue: storedEngine) {
+            proxyEngine = engine
+        }
+
+        var config = BuiltInProxyConfig()
+        config.corePath = UserDefaults.standard.string(forKey: "builtInCorePath") ?? config.corePath
+        config.subscriptionUrl = UserDefaults.standard.string(forKey: "builtInSubscriptionUrl") ?? ""
+        config.localYamlPath = UserDefaults.standard.string(forKey: "builtInLocalYamlPath") ?? ""
+        config.activeProfilePath = UserDefaults.standard.string(forKey: "builtInActiveProfilePath") ?? config.activeProfilePath
+
+        if UserDefaults.standard.object(forKey: "builtInMixedPort") != nil {
+            config.mixedPort = UserDefaults.standard.integer(forKey: "builtInMixedPort")
+        }
+
+        if UserDefaults.standard.object(forKey: "builtInControllerPort") != nil {
+            config.controllerPort = UserDefaults.standard.integer(forKey: "builtInControllerPort")
+        }
+
+        config.controllerSecret = UserDefaults.standard.string(forKey: "builtInControllerSecret") ?? ""
+        config.autoUpdateSubscription = UserDefaults.standard.object(forKey: "builtInAutoUpdateSubscription") as? Bool ?? false
+        builtInProxyConfig = config
+    }
+
+    private func saveProxyEngineConfig() {
+        UserDefaults.standard.set(proxyEngine.rawValue, forKey: "proxyEngine")
+        UserDefaults.standard.set(builtInProxyConfig.corePath, forKey: "builtInCorePath")
+        UserDefaults.standard.set(builtInProxyConfig.subscriptionUrl, forKey: "builtInSubscriptionUrl")
+        UserDefaults.standard.set(builtInProxyConfig.localYamlPath, forKey: "builtInLocalYamlPath")
+        UserDefaults.standard.set(builtInProxyConfig.activeProfilePath, forKey: "builtInActiveProfilePath")
+        UserDefaults.standard.set(builtInProxyConfig.mixedPort, forKey: "builtInMixedPort")
+        UserDefaults.standard.set(builtInProxyConfig.controllerPort, forKey: "builtInControllerPort")
+        UserDefaults.standard.set(builtInProxyConfig.controllerSecret, forKey: "builtInControllerSecret")
+        UserDefaults.standard.set(builtInProxyConfig.autoUpdateSubscription, forKey: "builtInAutoUpdateSubscription")
     }
     
     private func saveProxyConfig(_ config: ProxyConfig) {
@@ -207,7 +264,19 @@ class JackBridgeViewModel: NSObject, ObservableObject {
                     DispatchQueue.global().asyncAfter(deadline: .now() + 1.5) {
                         self.setupLogPolling(session: session)
                         
-                        if let config = self.proxyConfig {
+                        if self.proxyEngine == .builtIn {
+                            self.startBuiltInProxy { success in
+                                guard success else { return }
+                                let config = ProxyConfig(
+                                    type: "socks5",
+                                    host: "127.0.0.1",
+                                    port: self.builtInProxyConfig.mixedPort,
+                                    username: nil,
+                                    password: nil
+                                )
+                                self.sendProxyConfigToExtension(config, session: session)
+                            }
+                        } else if let config = self.proxyConfig {
                             self.sendProxyConfigToExtension(config, session: session)
                         }
                         
@@ -243,6 +312,7 @@ class JackBridgeViewModel: NSObject, ObservableObject {
                     self.logTimer?.invalidate()
                     self.logTimer = nil
                     self.tunnelSession = nil
+                    self.stopBuiltInProxy()
                     self.addLog("INFO", "Proxy stopped and extension memory cleared")
                 }
             }
@@ -368,8 +438,10 @@ class JackBridgeViewModel: NSObject, ObservableObject {
     }
     
     func setProxyConfig(_ config: ProxyConfig) {
+        proxyEngine = .external
         proxyConfig = config
         saveProxyConfig(config)
+        saveProxyEngineConfig()
         
         guard let session = tunnelSession else {
             addLog("ERROR", "Extension not connected")
@@ -377,6 +449,174 @@ class JackBridgeViewModel: NSObject, ObservableObject {
         }
         
         sendProxyConfigToExtension(config, session: session)
+    }
+
+    func setBuiltInProxyConfig(_ config: BuiltInProxyConfig) {
+        proxyEngine = .builtIn
+        builtInProxyConfig = config
+        saveProxyEngineConfig()
+
+        guard let session = tunnelSession else {
+            addLog("INFO", "Built-in proxy settings saved")
+            return
+        }
+
+        startBuiltInProxy { [weak self] success in
+            guard let self = self, success else { return }
+            let localConfig = ProxyConfig(
+                type: "socks5",
+                host: "127.0.0.1",
+                port: self.builtInProxyConfig.mixedPort,
+                username: nil,
+                password: nil
+            )
+            self.sendProxyConfigToExtension(localConfig, session: session)
+        }
+    }
+
+    func saveBuiltInProxySettings(_ config: BuiltInProxyConfig) {
+        proxyEngine = .builtIn
+        builtInProxyConfig = config
+        saveProxyEngineConfig()
+        addLog("INFO", "Built-in proxy settings saved")
+    }
+
+    func refreshBuiltInProfile(completion: @escaping (Bool, String) -> Void) {
+        ensurePortableFolders()
+        let profileURL = resolvePortableURL(builtInProxyConfig.activeProfilePath)
+
+        if !builtInProxyConfig.subscriptionUrl.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
+           let url = URL(string: builtInProxyConfig.subscriptionUrl) {
+            URLSession.shared.dataTask(with: url) { data, _, error in
+                if let error = error {
+                    DispatchQueue.main.async { completion(false, error.localizedDescription) }
+                    return
+                }
+
+                guard let data = data else {
+                    DispatchQueue.main.async { completion(false, "No subscription data received") }
+                    return
+                }
+
+                do {
+                    try data.write(to: profileURL, options: .atomic)
+                    DispatchQueue.main.async { completion(true, "Profile updated: \(profileURL.path)") }
+                } catch {
+                    DispatchQueue.main.async { completion(false, error.localizedDescription) }
+                }
+            }.resume()
+            return
+        }
+
+        if !builtInProxyConfig.localYamlPath.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            let sourceURL = resolvePortableURL(builtInProxyConfig.localYamlPath)
+            do {
+                if FileManager.default.fileExists(atPath: profileURL.path) {
+                    try FileManager.default.removeItem(at: profileURL)
+                }
+                try FileManager.default.copyItem(at: sourceURL, to: profileURL)
+                completion(true, "Profile copied: \(profileURL.path)")
+            } catch {
+                completion(false, error.localizedDescription)
+            }
+            return
+        }
+
+        completion(false, "Add a subscription URL or local YAML profile")
+    }
+
+    private func startBuiltInProxy(completion: @escaping (Bool) -> Void) {
+        if let process = mihomoProcess, process.isRunning {
+            completion(true)
+            return
+        }
+
+        ensurePortableFolders()
+
+        if builtInProxyConfig.controllerSecret.isEmpty {
+            builtInProxyConfig.controllerSecret = UUID().uuidString.replacingOccurrences(of: "-", with: "").lowercased()
+            saveProxyEngineConfig()
+        }
+
+        let coreURL = resolvePortableURL(builtInProxyConfig.corePath)
+        guard FileManager.default.fileExists(atPath: coreURL.path) else {
+            addLog("ERROR", "mihomo core not found: \(coreURL.path)")
+            completion(false)
+            return
+        }
+
+        let profileURL = resolvePortableURL(builtInProxyConfig.activeProfilePath)
+        let launch: () -> Void = { [weak self] in
+            guard let self = self else { return }
+
+            do {
+                try self.writeRuntimeMihomoConfig(profileURL: profileURL)
+
+                let runtimeURL = self.resolvePortableURL("core/runtime.yaml")
+                let process = Process()
+                process.executableURL = coreURL
+                process.arguments = ["-f", runtimeURL.path, "-d", self.resolvePortableURL("data").path]
+                process.currentDirectoryURL = coreURL.deletingLastPathComponent()
+                process.terminationHandler = { [weak self] _ in
+                    DispatchQueue.main.async {
+                        self?.addLog("INFO", "Built-in proxy core stopped")
+                    }
+                }
+
+                try process.run()
+                self.mihomoProcess = process
+                self.addLog("INFO", "Built-in proxy core started on 127.0.0.1:\(self.builtInProxyConfig.mixedPort)")
+                completion(true)
+            } catch {
+                self.addLog("ERROR", "Failed to start built-in proxy: \(error.localizedDescription)")
+                completion(false)
+            }
+        }
+
+        if FileManager.default.fileExists(atPath: profileURL.path) {
+            launch()
+        } else {
+            refreshBuiltInProfile { [weak self] success, message in
+                self?.addLog(success ? "INFO" : "ERROR", message)
+                if success { launch() } else { completion(false) }
+            }
+        }
+    }
+
+    private func stopBuiltInProxy() {
+        if let process = mihomoProcess, process.isRunning {
+            process.terminate()
+        }
+        mihomoProcess = nil
+    }
+
+    private func writeRuntimeMihomoConfig(profileURL: URL) throws {
+        let profile = try String(contentsOf: profileURL)
+        let suffix = """
+
+mixed-port: \(builtInProxyConfig.mixedPort)
+allow-lan: false
+external-controller: 127.0.0.1:\(builtInProxyConfig.controllerPort)
+secret: "\(builtInProxyConfig.controllerSecret)"
+"""
+        try (profile.trimmingCharacters(in: .whitespacesAndNewlines) + suffix)
+            .write(to: resolvePortableURL("core/runtime.yaml"), atomically: true, encoding: .utf8)
+    }
+
+    private func ensurePortableFolders() {
+        ["core", "profiles", "data", "rules", "logs"].forEach {
+            try? FileManager.default.createDirectory(at: resolvePortableURL($0), withIntermediateDirectories: true)
+        }
+    }
+
+    private func resolvePortableURL(_ path: String) -> URL {
+        let expanded = NSString(string: path).expandingTildeInPath
+        if expanded.hasPrefix("/") {
+            return URL(fileURLWithPath: expanded)
+        }
+
+        let appContainer = Bundle.main.bundleURL.deletingLastPathComponent()
+        return appContainer.appendingPathComponent(expanded)
     }
     
     private func sendProxyConfigToExtension(_ config: ProxyConfig, session: NETunnelProviderSession) {
