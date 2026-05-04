@@ -159,6 +159,28 @@ public sealed class MihomoService : IDisposable
         return true;
     }
 
+    private static async Task EnsureGeoAssetsAsync(BuiltInProxyConfig config, Action<string>? log = null)
+    {
+        var essentialFiles = new[] { "geoip.dat", "geosite.dat", "country.mmdb" };
+        var allPresent = true;
+
+        foreach (var file in essentialFiles)
+        {
+            var path = ResolvePortablePath(Path.Combine("data", file));
+            if (!File.Exists(path))
+            {
+                allPresent = false;
+                break;
+            }
+        }
+
+        if (allPresent)
+            return;
+
+        log?.Invoke("GEO assets missing — downloading...");
+        await UpdateGeoAssetsAsync(config, log);
+    }
+
     public static async Task<bool> UpdateGeoAssetsAsync(BuiltInProxyConfig config, Action<string>? log = null)
     {
         EnsureCoreFolders();
@@ -358,6 +380,8 @@ public sealed class MihomoService : IDisposable
 
         EnsureSecret(config);
         EnsureCoreFolders();
+
+        await EnsureGeoAssetsAsync(config, log);
 
         var corePath = ResolvePortablePath(config.CorePath);
         if (!File.Exists(corePath))

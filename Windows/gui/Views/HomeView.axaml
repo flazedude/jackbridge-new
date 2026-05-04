@@ -98,8 +98,10 @@
                     <Border Background="#FF1d1d1f"
                             CornerRadius="6"
                             Padding="10">
-                        <ScrollViewer>
-                            <TextBlock Text="{Binding RecentActivity}"
+                        <ScrollViewer x:Name="ActivityScroller"
+                                      ScrollChanged="OnLogScrollChanged">
+                            <TextBlock x:Name="ActivityLogText"
+                                       Text="{Binding RecentActivity}"
                                        FontSize="11"
                                        Foreground="#FF7a7a7a"
                                        FontFamily="Consolas,monospace"
@@ -125,8 +127,10 @@
                     <Border Background="#FF1d1d1f"
                             CornerRadius="6"
                             Padding="10">
-                        <ScrollViewer>
-                            <TextBlock Text="{Binding RecentConnections}"
+                        <ScrollViewer x:Name="ConnectionsScroller"
+                                      ScrollChanged="OnLogScrollChanged">
+                            <TextBlock x:Name="ConnectionsLogText"
+                                       Text="{Binding RecentConnections}"
                                        FontSize="11"
                                        Foreground="#FF7a7a7a"
                                        FontFamily="Consolas,monospace"

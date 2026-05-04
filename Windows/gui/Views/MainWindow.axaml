@@ -187,8 +187,6 @@
                                 Command="{Binding NavigateHomeCommand}"/>
                         <Button Classes="navLink" Content="Connections"
                                 Command="{Binding NavigateConnectionsCommand}"/>
-                        <Button Classes="navLink" Content="Activity"
-                                Command="{Binding NavigateActivityCommand}"/>
                         <Button Classes="navLink" Content="Rules"
                                 Command="{Binding ShowProxyRulesCommand}"/>
                         <Button Classes="navLink" Content="Settings"
