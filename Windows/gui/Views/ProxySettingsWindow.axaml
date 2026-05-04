@@ -3,81 +3,139 @@
         xmlns:vm="using:JackBridge.GUI.ViewModels"
         xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
         xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
-        mc:Ignorable="d" d:DesignWidth="620" d:DesignHeight="760"
+        mc:Ignorable="d" d:DesignWidth="760" d:DesignHeight="820"
         x:Class="JackBridge.GUI.Views.ProxySettingsWindow"
         x:DataType="vm:ProxySettingsViewModel"
         x:CompileBindings="True"
-        Background="#FF2D2D30">
+        Background="#FF181818">
+
+    <UserControl.Styles>
+        <Style Selector="Border.proxyCard">
+            <Setter Property="Background" Value="#FF202022"/>
+            <Setter Property="BorderBrush" Value="#FF353538"/>
+            <Setter Property="BorderThickness" Value="1"/>
+            <Setter Property="CornerRadius" Value="6"/>
+            <Setter Property="Padding" Value="16"/>
+        </Style>
+
+        <Style Selector="Border.engineCard">
+            <Setter Property="Background" Value="#FF202022"/>
+            <Setter Property="BorderBrush" Value="#FF353538"/>
+            <Setter Property="BorderThickness" Value="1"/>
+            <Setter Property="CornerRadius" Value="6"/>
+            <Setter Property="Padding" Value="14"/>
+        </Style>
+
+        <Style Selector="TextBlock.sectionTitle">
+            <Setter Property="Foreground" Value="#FFFFFFFF"/>
+            <Setter Property="FontSize" Value="15"/>
+            <Setter Property="FontWeight" Value="SemiBold"/>
+        </Style>
+
+        <Style Selector="TextBlock.valueText">
+            <Setter Property="Foreground" Value="#FF39D7B7"/>
+            <Setter Property="FontSize" Value="12"/>
+            <Setter Property="FontFamily" Value="Consolas,monospace"/>
+        </Style>
+
+        <Style Selector="Button.segment">
+            <Setter Property="Background" Value="#FF2D2D30"/>
+            <Setter Property="Foreground" Value="#FFDADADA"/>
+            <Setter Property="BorderThickness" Value="1"/>
+            <Setter Property="BorderBrush" Value="#FF3E3E42"/>
+            <Setter Property="CornerRadius" Value="4"/>
+            <Setter Property="HorizontalAlignment" Value="Stretch"/>
+            <Setter Property="HorizontalContentAlignment" Value="Center"/>
+        </Style>
+
+        <Style Selector="Button.segment:pointerover">
+            <Setter Property="Background" Value="#FF363639"/>
+        </Style>
+
+        <Style Selector="Border.dropZone">
+            <Setter Property="Background" Value="#FF171719"/>
+            <Setter Property="BorderBrush" Value="#FF3F3F46"/>
+            <Setter Property="BorderThickness" Value="1"/>
+            <Setter Property="CornerRadius" Value="6"/>
+            <Setter Property="Padding" Value="16"/>
+        </Style>
+    </UserControl.Styles>
 
     <DockPanel>
         <Border DockPanel.Dock="Top" Background="#FF1E1E1E" Padding="20,16">
-            <StackPanel Orientation="Horizontal" Spacing="10">
-                <Image Source="/Assets/nav-settings.png" Width="22" Height="22" VerticalAlignment="Center"/>
-                <TextBlock Text="Proxy Settings"
-                           FontSize="18"
-                           FontWeight="SemiBold"
-                           Foreground="#FFE0E0E0"
+            <Grid ColumnDefinitions="*,Auto">
+                <StackPanel Orientation="Horizontal" Spacing="10">
+                    <Image Source="/Assets/nav-settings.png" Width="22" Height="22" VerticalAlignment="Center"/>
+                    <TextBlock Text="Proxy Settings"
+                               FontSize="18"
+                               FontWeight="SemiBold"
+                               Foreground="#FFEDEDED"
+                               VerticalAlignment="Center"/>
+                </StackPanel>
+                <TextBlock Grid.Column="1"
+                           Text="{Binding ProxyEngine}"
+                           Classes="valueText"
                            VerticalAlignment="Center"/>
-            </StackPanel>
+            </Grid>
         </Border>
 
         <ScrollViewer VerticalScrollBarVisibility="Auto"
                       HorizontalScrollBarVisibility="Disabled">
-            <StackPanel Margin="24,20" Spacing="18">
-                <StackPanel Spacing="8">
-                    <TextBlock Text="Proxy engine" Classes="label"/>
-                    <Border Background="#FF1E1E1E"
-                            BorderBrush="#FF3F3F46"
-                            BorderThickness="1"
-                            CornerRadius="4"
-                            Padding="4">
-                        <Grid ColumnDefinitions="*,*">
-                            <Button Grid.Column="0"
-                                    Content="External Proxy"
+            <StackPanel Margin="22,18" Spacing="14">
+                <Grid ColumnDefinitions="*,*" ColumnSpacing="12">
+                    <Border Grid.Column="0" Classes="engineCard">
+                        <StackPanel Spacing="10">
+                            <TextBlock Text="External Proxy" Classes="sectionTitle"/>
+                            <TextBlock Text="Use an existing SOCKS5 or HTTP proxy endpoint." Classes="secondary" TextWrapping="Wrap"/>
+                            <Button Content="Use External"
                                     Command="{Binding UseExternalProxyCommand}"
-                                    Classes="secondary"
-                                    Margin="0,0,4,0"
+                                    Classes="segment"
                                     IsEnabled="{Binding IsBuiltInProxy}"/>
-                            <Button Grid.Column="1"
-                                    Content="Built-in Proxy"
-                                    Command="{Binding UseBuiltInProxyCommand}"
-                                    Classes="secondary"
-                                    Margin="4,0,0,0"
-                                    IsEnabled="{Binding IsExternalProxy}"/>
-                        </Grid>
+                        </StackPanel>
                     </Border>
-                </StackPanel>
 
-                <Border BorderBrush="#FF3F3F46"
-                        BorderThickness="1"
-                        CornerRadius="4"
-                        Padding="16"
-                        IsVisible="{Binding IsExternalProxy}">
+                    <Border Grid.Column="1" Classes="engineCard">
+                        <StackPanel Spacing="10">
+                            <TextBlock Text="Built-in mihomo" Classes="sectionTitle"/>
+                            <TextBlock Text="{Binding CoreStatus}" Classes="secondary" TextWrapping="Wrap" MinHeight="34"/>
+                            <Button Content="Use Built-in"
+                                    Command="{Binding UseBuiltInProxyCommand}"
+                                    Classes="segment"
+                                    IsEnabled="{Binding IsExternalProxy}"/>
+                        </StackPanel>
+                    </Border>
+                </Grid>
+
+                <Border Classes="proxyCard" IsVisible="{Binding IsExternalProxy}">
                     <StackPanel Spacing="14">
-                        <TextBlock Text="External proxy"
-                                   FontSize="14"
-                                   FontWeight="SemiBold"/>
-                        <StackPanel Spacing="6">
-                            <TextBlock Text="{Binding Loc.ProxyTypeLabel}" Classes="label"/>
-                            <ComboBox HorizontalAlignment="Stretch" x:Name="ProxyTypeComboBox">
-                                <ComboBoxItem Content="SOCKS5" Tag="SOCKS5"/>
-                                <ComboBoxItem Content="HTTP" Tag="HTTP"/>
-                            </ComboBox>
-                        </StackPanel>
-                        <StackPanel Spacing="6">
-                            <TextBlock Text="{Binding Loc.ProxyIpLabel}" Classes="label"/>
-                            <TextBox Text="{Binding ProxyIp}" Watermark="{Binding Loc.ProxyIpPlaceholder}"/>
-                            <TextBlock Text="{Binding IpError}" Classes="error" IsVisible="{Binding IpError, Converter={x:Static StringConverters.IsNotNullOrEmpty}}"/>
-                        </StackPanel>
-                        <StackPanel Spacing="6">
-                            <TextBlock Text="{Binding Loc.ProxyPortLabel}" Classes="label"/>
-                            <TextBox Text="{Binding ProxyPort}" Watermark="{Binding Loc.ProxyPortPlaceholder}"/>
-                            <TextBlock Text="{Binding PortError}" Classes="error" IsVisible="{Binding PortError, Converter={x:Static StringConverters.IsNotNullOrEmpty}}"/>
-                        </StackPanel>
-                        <StackPanel Spacing="6">
-                            <TextBlock Text="{Binding Loc.UsernameLabel}" Classes="label"/>
-                            <TextBox Text="{Binding ProxyUsername}" Watermark="{Binding Loc.UsernamePlaceholder}"/>
-                        </StackPanel>
+                        <TextBlock Text="External endpoint" Classes="sectionTitle"/>
+                        <Grid ColumnDefinitions="2*,*" ColumnSpacing="12">
+                            <StackPanel Grid.Column="0" Spacing="6">
+                                <TextBlock Text="{Binding Loc.ProxyIpLabel}" Classes="label"/>
+                                <TextBox Text="{Binding ProxyIp}" Watermark="{Binding Loc.ProxyIpPlaceholder}"/>
+                                <TextBlock Text="{Binding IpError}" Classes="error" IsVisible="{Binding IpError, Converter={x:Static StringConverters.IsNotNullOrEmpty}}"/>
+                            </StackPanel>
+                            <StackPanel Grid.Column="1" Spacing="6">
+                                <TextBlock Text="{Binding Loc.ProxyPortLabel}" Classes="label"/>
+                                <TextBox Text="{Binding ProxyPort}" Watermark="{Binding Loc.ProxyPortPlaceholder}"/>
+                                <TextBlock Text="{Binding PortError}" Classes="error" IsVisible="{Binding PortError, Converter={x:Static StringConverters.IsNotNullOrEmpty}}"/>
+                            </StackPanel>
+                        </Grid>
+
+                        <Grid ColumnDefinitions="*,*" ColumnSpacing="12">
+                            <StackPanel Grid.Column="0" Spacing="6">
+                                <TextBlock Text="{Binding Loc.ProxyTypeLabel}" Classes="label"/>
+                                <ComboBox HorizontalAlignment="Stretch" x:Name="ProxyTypeComboBox">
+                                    <ComboBoxItem Content="SOCKS5" Tag="SOCKS5"/>
+                                    <ComboBoxItem Content="HTTP" Tag="HTTP"/>
+                                </ComboBox>
+                            </StackPanel>
+                            <StackPanel Grid.Column="1" Spacing="6">
+                                <TextBlock Text="{Binding Loc.UsernameLabel}" Classes="label"/>
+                                <TextBox Text="{Binding ProxyUsername}" Watermark="{Binding Loc.UsernamePlaceholder}"/>
+                            </StackPanel>
+                        </Grid>
+
                         <StackPanel Spacing="6">
                             <TextBlock Text="{Binding Loc.PasswordLabel}" Classes="label"/>
                             <TextBox Text="{Binding ProxyPassword}" Watermark="{Binding Loc.PasswordPlaceholder}" PasswordChar="*"/>
@@ -85,68 +143,286 @@
                     </StackPanel>
                 </Border>
 
-                <Border BorderBrush="#FF3F3F46"
-                        BorderThickness="1"
-                        CornerRadius="4"
-                        Padding="16"
-                        IsVisible="{Binding IsBuiltInProxy}">
-                    <StackPanel Spacing="14">
-                        <TextBlock Text="Built-in mihomo proxy" FontSize="14" FontWeight="SemiBold"/>
-                        <StackPanel Spacing="6">
-                            <TextBlock Text="Core path" Classes="label"/>
-                            <TextBox Text="{Binding CorePath}" Watermark="core\mihomo.exe"/>
-                        </StackPanel>
-                        <StackPanel Spacing="6">
-                            <TextBlock Text="Subscription URL" Classes="label"/>
-                            <TextBox Text="{Binding SubscriptionUrl}" Watermark="https://example.com/subscription"/>
-                        </StackPanel>
-                        <StackPanel Spacing="6">
-                            <TextBlock Text="Local YAML path" Classes="label"/>
-                            <TextBox Text="{Binding LocalYamlPath}" Watermark="profiles\custom.yaml or C:\path\config.yaml"/>
-                        </StackPanel>
-                        <Grid ColumnDefinitions="*,*" ColumnSpacing="12">
-                            <StackPanel Grid.Column="0" Spacing="6">
-                                <TextBlock Text="Active profile" Classes="label"/>
-                                <TextBox Text="{Binding ActiveProfilePath}" Watermark="profiles\mihomo.yaml"/>
-                            </StackPanel>
-                            <StackPanel Grid.Column="1" Spacing="6">
-                                <TextBlock Text="Mixed port" Classes="label"/>
-                                <TextBox Text="{Binding MixedPort}" Watermark="7892"/>
-                            </StackPanel>
-                        </Grid>
-                        <Grid ColumnDefinitions="*,Auto" ColumnSpacing="12">
-                            <StackPanel Grid.Column="0" Spacing="6">
-                                <TextBlock Text="Controller port" Classes="label"/>
-                                <TextBox Text="{Binding ControllerPort}" Watermark="9090"/>
-                            </StackPanel>
-                            <CheckBox Grid.Column="1"
-                                      Content="Auto update"
-                                      IsChecked="{Binding AutoUpdateSubscription}"
-                                      VerticalAlignment="Bottom"
-                                      Margin="0,0,0,8"/>
-                        </Grid>
-                        <Button Content="Update Profile Now"
-                                Command="{Binding RefreshProfileCommand}"
-                                IsEnabled="{Binding !IsTesting}"
-                                HorizontalAlignment="Left"/>
-                        <TextBlock Text="{Binding BuiltInError}"
-                                   Classes="error"
-                                   TextWrapping="Wrap"
-                                   IsVisible="{Binding BuiltInError, Converter={x:Static StringConverters.IsNotNullOrEmpty}}"/>
-                    </StackPanel>
-                </Border>
+                <StackPanel Spacing="14" IsVisible="{Binding IsBuiltInProxy}">
+                    <Border Classes="proxyCard">
+                        <StackPanel Spacing="14">
+                            <Grid ColumnDefinitions="*,Auto" ColumnSpacing="12">
+                                <TextBlock Text="Core" Classes="sectionTitle" VerticalAlignment="Center"/>
+                                <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="8">
+                                    <Button Content="Check Core"
+                                            Command="{Binding CheckCoreCommand}"
+                                            Classes="secondary"
+                                            IsEnabled="{Binding !IsTesting}"/>
+                                    <Button Content="Install / Update Core"
+                                            Command="{Binding UpdateCoreCommand}"
+                                            IsEnabled="{Binding !IsTesting}"/>
+                                </StackPanel>
+                            </Grid>
 
-                <Border BorderBrush="#FF3F3F46" BorderThickness="0,1,0,0" Padding="0,16,0,0" Margin="0,6,0,0" IsVisible="{Binding !IsTestViewOpen}">
-                    <StackPanel Spacing="12">
-                        <TextBlock Text="{Binding Loc.TestConnectionTitle}" FontSize="14" FontWeight="SemiBold"/>
+                            <StackPanel Spacing="6">
+                                <TextBlock Text="Core path" Classes="label"/>
+                                <TextBox Text="{Binding CorePath}" Watermark="core\mihomo.exe"/>
+                            </StackPanel>
+
+                            <TextBlock Text="{Binding CoreStatus}" Classes="secondary" TextWrapping="Wrap"/>
+                        </StackPanel>
+                    </Border>
+
+                    <Border Classes="proxyCard">
+                        <StackPanel Spacing="14">
+                            <TextBlock Text="DNS" Classes="sectionTitle"/>
+                            <CheckBox Content="Override profile DNS in runtime config"
+                                      IsChecked="{Binding OverrideDns}"/>
+
+                            <StackPanel Spacing="6">
+                                <TextBlock Text="Bootstrap DNS" Classes="label"/>
+                                <TextBox Text="{Binding DefaultNameservers}" Watermark="1.1.1.1,8.8.8.8,223.5.5.5"/>
+                            </StackPanel>
+
+                            <StackPanel Spacing="6">
+                                <TextBlock Text="Nameservers" Classes="label"/>
+                                <TextBox Text="{Binding Nameservers}" Watermark="https://1.1.1.1/dns-query,https://dns.alidns.com/dns-query"/>
+                            </StackPanel>
+
+                            <StackPanel Spacing="6">
+                                <TextBlock Text="Proxy server DNS" Classes="label"/>
+                                <TextBox Text="{Binding ProxyServerNameservers}" Watermark="1.1.1.1,8.8.8.8,223.5.5.5"/>
+                            </StackPanel>
+                        </StackPanel>
+                    </Border>
+
+                    <Border Classes="proxyCard">
+                        <StackPanel Spacing="14">
+                            <Grid ColumnDefinitions="*,Auto" ColumnSpacing="12">
+                                <StackPanel Spacing="4">
+                                    <TextBlock Text="Profile" Classes="sectionTitle"/>
+                                    <TextBlock Text="{Binding ProfileStatus}" Classes="valueText" TextWrapping="Wrap"/>
+                                </StackPanel>
+                                <Button Grid.Column="1"
+                                        Content="Update Profile"
+                                        Command="{Binding RefreshProfileCommand}"
+                                        IsEnabled="{Binding !IsTesting}"/>
+                            </Grid>
+
+                            <StackPanel Spacing="6">
+                                <TextBlock Text="Subscription URL" Classes="label"/>
+                                <TextBox Text="{Binding SubscriptionUrl}" Watermark="https://example.com/subscription"/>
+                            </StackPanel>
+
+                            <Border Classes="dropZone"
+                                    Name="YamlDropZone">
+                                <StackPanel Spacing="8">
+                                    <TextBlock Text="Drop YAML profile here" Classes="label" HorizontalAlignment="Center"/>
+                                    <TextBlock Text="Imports .yaml or .yml into the portable profiles folder." Classes="secondary" HorizontalAlignment="Center" TextWrapping="Wrap"/>
+                                    <Button Content="Browse YAML"
+                                            Click="BrowseYaml_Click"
+                                            Classes="secondary"
+                                            HorizontalAlignment="Center"/>
+                                </StackPanel>
+                            </Border>
+
+                            <Grid ColumnDefinitions="*,*" ColumnSpacing="12">
+                                <StackPanel Grid.Column="0" Spacing="6">
+                                    <TextBlock Text="Local YAML path" Classes="label"/>
+                                    <TextBox Text="{Binding LocalYamlPath}" Watermark="profiles\custom.yaml or C:\path\config.yaml"/>
+                                </StackPanel>
+                                <StackPanel Grid.Column="1" Spacing="6">
+                                    <TextBlock Text="Active profile" Classes="label"/>
+                                    <TextBox Text="{Binding ActiveProfilePath}" Watermark="profiles\mihomo.yaml"/>
+                                </StackPanel>
+                            </Grid>
+
+                            <CheckBox Content="Auto update subscription before starting built-in proxy"
+                                      IsChecked="{Binding AutoUpdateSubscription}"/>
+                        </StackPanel>
+                    </Border>
+
+                    <Border Classes="proxyCard">
+                        <StackPanel Spacing="14">
+                            <TextBlock Text="Runtime" Classes="sectionTitle"/>
+
+                            <Grid ColumnDefinitions="*,*,*" ColumnSpacing="12">
+                                <StackPanel Grid.Column="0" Spacing="6">
+                                    <TextBlock Text="Mode" Classes="label"/>
+                                    <ComboBox SelectedIndex="{Binding ModeIndex}">
+                                        <ComboBoxItem Content="Rule"/>
+                                        <ComboBoxItem Content="Global"/>
+                                        <ComboBoxItem Content="Direct"/>
+                                    </ComboBox>
+                                </StackPanel>
+
+                                <StackPanel Grid.Column="1" Spacing="6">
+                                    <TextBlock Text="Log level" Classes="label"/>
+                                    <ComboBox SelectedIndex="{Binding LogLevelIndex}">
+                                        <ComboBoxItem Content="Debug"/>
+                                        <ComboBoxItem Content="Info"/>
+                                        <ComboBoxItem Content="Warning"/>
+                                        <ComboBoxItem Content="Error"/>
+                                        <ComboBoxItem Content="Silent"/>
+                                    </ComboBox>
+                                </StackPanel>
+
+                                <StackPanel Grid.Column="2" Spacing="6">
+                                    <TextBlock Text="Self-host mixed port" Classes="label"/>
+                                    <TextBox Text="{Binding MixedPort}" Watermark="8888"/>
+                                </StackPanel>
+                            </Grid>
+
+                            <TextBlock Text="Built-in mode starts mihomo locally and JackBridge routes proxied apps to 127.0.0.1 on this port." Classes="secondary" TextWrapping="Wrap"/>
+
+                            <Grid ColumnDefinitions="*,*" ColumnSpacing="12">
+                                <CheckBox Grid.Column="0" Content="Allow LAN clients" IsChecked="{Binding AllowLan}"/>
+                                <CheckBox Grid.Column="1" Content="IPv6" IsChecked="{Binding Ipv6}"/>
+                            </Grid>
+
+                            <Grid ColumnDefinitions="*,*" ColumnSpacing="12">
+                                <CheckBox Grid.Column="0" Content="Unified delay" IsChecked="{Binding UnifiedDelay}"/>
+                                <CheckBox Grid.Column="1" Content="Controller API" IsChecked="{Binding EnableController}"/>
+                            </Grid>
+                        </StackPanel>
+                    </Border>
+
+                    <Border Classes="proxyCard">
+                        <StackPanel Spacing="14">
+                            <Grid ColumnDefinitions="*,Auto" ColumnSpacing="12">
+                                <StackPanel Spacing="4">
+                                    <TextBlock Text="Proxy Selector" Classes="sectionTitle"/>
+                                    <TextBlock Text="Load servers from the profile, then choose the active proxy policy." Classes="secondary" TextWrapping="Wrap"/>
+                                </StackPanel>
+                                <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="8">
+                                    <Button Content="Load Proxies"
+                                            Command="{Binding LoadProxyChoicesCommand}"
+                                            Classes="secondary"
+                                            IsEnabled="{Binding !IsTesting}"/>
+                                    <Button Content="Apply"
+                                            Command="{Binding ApplyProxyChoiceCommand}"
+                                            IsEnabled="{Binding !IsTesting}"/>
+                                </StackPanel>
+                            </Grid>
+
+                            <StackPanel Spacing="6">
+                                <TextBlock Text="Selected server" Classes="label"/>
+                                <TextBox Text="{Binding SelectedProxyName}" Watermark="Proxy server name"/>
+                            </StackPanel>
+
+                            <StackPanel Spacing="6">
+                                <TextBlock Text="Profile servers" Classes="label"/>
+                                <ComboBox ItemsSource="{Binding ProxyChoices}"
+                                          SelectedItem="{Binding SelectedProxyChoice}"
+                                          HorizontalAlignment="Stretch"/>
+                                <TextBlock Text="Groups are hidden here. Rule mode decides which traffic uses this selected server." Classes="secondary" TextWrapping="Wrap"/>
+                            </StackPanel>
+                        </StackPanel>
+                    </Border>
+
+                    <Border Classes="proxyCard" IsVisible="{Binding IsRuleMode}">
+                        <StackPanel Spacing="14">
+                            <TextBlock Text="Rule Mode" Classes="sectionTitle"/>
+                            <TextBlock Text="Choose the routing policy JackBridge writes into the runtime mihomo config." Classes="secondary" TextWrapping="Wrap"/>
+
+                            <StackPanel Spacing="6">
+                                <TextBlock Text="Rule preset" Classes="label"/>
+                                <ComboBox SelectedIndex="{Binding RulePresetIndex}">
+                                    <ComboBoxItem Content="CN direct, rest selected server"/>
+                                    <ComboBoxItem Content="Everything selected server"/>
+                                    <ComboBoxItem Content="Block ads, CN direct, rest selected server"/>
+                                    <ComboBoxItem Content="Everything direct"/>
+                                </ComboBox>
+                            </StackPanel>
+
+                            <TextBlock Classes="secondary" TextWrapping="Wrap"
+                                       Text="Uses mihomo GEOSITE/GEOIP data. Good external rule sources to consider later: MetaCubeX meta-rules-dat and blackmatrix7 ios_rule_script."/>
+                        </StackPanel>
+                    </Border>
+
+                    <Border Classes="proxyCard">
+                        <StackPanel Spacing="14">
+                            <Grid ColumnDefinitions="*,Auto" ColumnSpacing="12">
+                                <StackPanel Spacing="4">
+                                    <TextBlock Text="Controller" Classes="sectionTitle"/>
+                                    <TextBlock Text="{Binding ControllerAddress}" Classes="valueText"/>
+                                </StackPanel>
+                                <Button Grid.Column="1"
+                                        Content="New Secret"
+                                        Command="{Binding GenerateSecretCommand}"
+                                        Classes="secondary"/>
+                            </Grid>
+
+                            <Grid ColumnDefinitions="*,2*" ColumnSpacing="12">
+                                <StackPanel Grid.Column="0" Spacing="6">
+                                    <TextBlock Text="Controller port" Classes="label"/>
+                                    <TextBox Text="{Binding ControllerPort}" Watermark="9090"/>
+                                </StackPanel>
+                                <StackPanel Grid.Column="1" Spacing="6">
+                                    <TextBlock Text="Secret" Classes="label"/>
+                                    <TextBox Text="{Binding ControllerSecret}" Watermark="generated automatically" PasswordChar="*"/>
+                                </StackPanel>
+                            </Grid>
+                        </StackPanel>
+                    </Border>
+
+                    <Border Classes="proxyCard">
+                        <StackPanel Spacing="14">
+                            <Grid ColumnDefinitions="*,Auto" ColumnSpacing="12">
+                                <StackPanel Spacing="4">
+                                    <TextBlock Text="GEO Assets" Classes="sectionTitle"/>
+                                    <TextBlock Text="Refresh geoip, geosite, MMDB, and ASN files into the portable data folder." Classes="secondary" TextWrapping="Wrap"/>
+                                </StackPanel>
+                                <Button Grid.Column="1"
+                                        Content="Update GEO"
+                                        Command="{Binding UpdateGeoAssetsCommand}"
+                                        IsEnabled="{Binding !IsTesting}"/>
+                            </Grid>
+
+                            <Grid ColumnDefinitions="*,*" ColumnSpacing="12">
+                                <CheckBox Grid.Column="0" Content="mihomo auto update GEO" IsChecked="{Binding GeoAutoUpdate}"/>
+                                <StackPanel Grid.Column="1" Spacing="6">
+                                    <TextBlock Text="Update interval hours" Classes="label"/>
+                                    <TextBox Text="{Binding GeoUpdateInterval}" Watermark="24"/>
+                                </StackPanel>
+                            </Grid>
+
+                            <Grid ColumnDefinitions="*,*" ColumnSpacing="12">
+                                <StackPanel Grid.Column="0" Spacing="6">
+                                    <TextBlock Text="GeoIP URL" Classes="label"/>
+                                    <TextBox Text="{Binding GeoIpUrl}"/>
+                                </StackPanel>
+                                <StackPanel Grid.Column="1" Spacing="6">
+                                    <TextBlock Text="GeoSite URL" Classes="label"/>
+                                    <TextBox Text="{Binding GeoSiteUrl}"/>
+                                </StackPanel>
+                            </Grid>
+
+                            <Grid ColumnDefinitions="*,*" ColumnSpacing="12">
+                                <StackPanel Grid.Column="0" Spacing="6">
+                                    <TextBlock Text="MMDB URL" Classes="label"/>
+                                    <TextBox Text="{Binding MmdbUrl}"/>
+                                </StackPanel>
+                                <StackPanel Grid.Column="1" Spacing="6">
+                                    <TextBlock Text="ASN URL" Classes="label"/>
+                                    <TextBox Text="{Binding AsnUrl}"/>
+                                </StackPanel>
+                            </Grid>
+                        </StackPanel>
+                    </Border>
+
+                    <TextBlock Text="{Binding BuiltInError}"
+                               Classes="error"
+                               TextWrapping="Wrap"
+                               IsVisible="{Binding BuiltInError, Converter={x:Static StringConverters.IsNotNullOrEmpty}}"/>
+                </StackPanel>
+
+                <Border BorderBrush="#FF343437" BorderThickness="0,1,0,0" Padding="0,14,0,0" Margin="0,4,0,0" IsVisible="{Binding !IsTestViewOpen}">
+                    <StackPanel Spacing="10">
+                        <TextBlock Text="{Binding Loc.TestConnectionTitle}" Classes="sectionTitle"/>
                         <Button Content="{Binding Loc.TestConnectionButton}" Command="{Binding OpenTestCommand}" Classes="secondary" HorizontalAlignment="Left"/>
                     </StackPanel>
                 </Border>
 
-                <Border BorderBrush="#FF3F3F46" BorderThickness="0,1,0,0" Padding="0,16,0,0" Margin="0,6,0,0" IsVisible="{Binding IsTestViewOpen}">
+                <Border BorderBrush="#FF343437" BorderThickness="0,1,0,0" Padding="0,14,0,0" Margin="0,4,0,0" IsVisible="{Binding IsTestViewOpen}">
                     <StackPanel Spacing="12">
                         <Grid ColumnDefinitions="*,Auto">
-                            <TextBlock Text="{Binding Loc.TestConnectionTitle}" FontSize="14" FontWeight="SemiBold" VerticalAlignment="Center"/>
+                            <TextBlock Text="{Binding Loc.TestConnectionTitle}" Classes="sectionTitle" VerticalAlignment="Center"/>
                             <Button Grid.Column="1" Content="X" Classes="secondary" Command="{Binding CloseTestCommand}" Width="32" Height="32" Padding="0"/>
                         </Grid>
                         <Grid ColumnDefinitions="3*,2*" ColumnSpacing="12">
@@ -162,7 +438,7 @@
                         <Button Content="{Binding Loc.StartTestButton}" Command="{Binding StartTestCommand}" IsEnabled="{Binding !IsTesting}" HorizontalAlignment="Left"/>
                         <StackPanel Spacing="6">
                             <TextBlock Text="{Binding Loc.OutputLabel}" Classes="label"/>
-                            <Border Background="#FF1E1E1E" BorderBrush="#FF3F3F46" BorderThickness="1" Padding="10" MinHeight="140" MaxHeight="200">
+                            <Border Background="#FF111112" BorderBrush="#FF343437" BorderThickness="1" Padding="10" MinHeight="140" MaxHeight="200" CornerRadius="4">
                                 <ScrollViewer VerticalScrollBarVisibility="Auto">
                                     <TextBlock Text="{Binding TestOutput}" FontFamily="Consolas,monospace" FontSize="12" TextWrapping="Wrap"/>
                                 </ScrollViewer>
@@ -171,7 +447,7 @@
                     </StackPanel>
                 </Border>
 
-                <StackPanel Orientation="Horizontal" HorizontalAlignment="Right" Spacing="12" Margin="0,10,0,20">
+                <StackPanel Orientation="Horizontal" HorizontalAlignment="Right" Spacing="12" Margin="0,8,0,18">
                     <Button Content="{Binding Loc.ButtonCancel}" Classes="secondary" Command="{Binding CancelCommand}" Width="100"/>
                     <Button Content="{Binding Loc.SaveChangesButton}" Command="{Binding SaveCommand}" Width="130"/>
                 </StackPanel>

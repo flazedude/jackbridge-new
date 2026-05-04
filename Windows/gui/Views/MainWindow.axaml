@@ -523,7 +523,7 @@
                         <DockPanel>
                             <!-- Search and Clear Bar -->
                             <Border DockPanel.Dock="Top" Background="#FF1E1E1E" Padding="8" BorderBrush="#FF3F3F46" BorderThickness="0,0,0,1">
-                                <Grid ColumnDefinitions="*,Auto">
+                                <Grid ColumnDefinitions="*,Auto,Auto">
                                     <TextBox Grid.Column="0"
                                              Text="{Binding ActivitySearchText}"
                                              Watermark="Search activity (press Enter)..."
@@ -533,6 +533,11 @@
                                         </TextBox.KeyBindings>
                                     </TextBox>
                                     <Button Grid.Column="1"
+                                            Content="Add Rule"
+                                            Classes="secondary"
+                                            Command="{Binding AddRuleCommand}"
+                                            Padding="12,6" Margin="0,0,8,0"/>
+                                    <Button Grid.Column="2"
                                             Content="{Binding Loc.ButtonClear}"
                                             Classes="secondary"
                                             Command="{Binding ClearActivityLogCommand}"

@@ -336,7 +336,7 @@ public class ProxyRulesViewModel : ViewModelBase
 
         DeleteRuleCommand = new RelayCommandWithParameter<ProxyRule>(async (rule) =>
         {
-            if (rule == null || _proxyService == null || _window == null)
+            if (rule == null || _window == null)
                 return;
 
             var result = await ShowConfirmDialogAsync("Delete Rule",
@@ -344,13 +344,13 @@ public class ProxyRulesViewModel : ViewModelBase
 
             if (result)
             {
-                if (_proxyService.DeleteRule(rule.RuleId))
-                {
-                    ProxyRules.Remove(rule);
-                    RefreshRulePriorities();
-                    NotifyRuleSectionsChanged();
-                    _onConfigChanged?.Invoke();
-                }
+                if (rule.RuleId > 0)
+                    _proxyService?.DeleteRule(rule.RuleId);
+
+                ProxyRules.Remove(rule);
+                RefreshRulePriorities();
+                NotifyRuleSectionsChanged();
+                _onConfigChanged?.Invoke();
             }
         });
 
@@ -423,10 +423,10 @@ public class ProxyRulesViewModel : ViewModelBase
 
             foreach (var rule in selectedRules)
             {
-                if (_proxyService != null && _proxyService.DeleteRule(rule.RuleId))
-                {
-                    ProxyRules.Remove(rule);
-                }
+                if (rule.RuleId > 0)
+                    _proxyService?.DeleteRule(rule.RuleId);
+
+                ProxyRules.Remove(rule);
             }
 
             RefreshRulePriorities();

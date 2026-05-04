@@ -1,0 +1,146 @@
+<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:vm="using:JackBridge.GUI.ViewModels"
+        x:Class="JackBridge.GUI.Views.AddRuleDialog"
+        Title="Add Rule"
+        Width="460" Height="520"
+        MinWidth="400" MinHeight="440"
+        CanResize="False"
+        WindowStartupLocation="CenterOwner"
+        Background="#FF1E1E1E">
+
+    <Window.Styles>
+        <Style Selector="TextBox">
+            <Setter Property="Background" Value="#FF1E1E1E"/>
+            <Setter Property="Foreground" Value="#FFD4D4D4"/>
+            <Setter Property="BorderBrush" Value="#FF3F3F46"/>
+            <Setter Property="BorderThickness" Value="1"/>
+            <Setter Property="Padding" Value="8"/>
+            <Setter Property="FontFamily" Value="Consolas,Courier New"/>
+            <Setter Property="FontSize" Value="13"/>
+        </Style>
+        <Style Selector="TextBox:focus /template/ Border#PART_BorderElement">
+            <Setter Property="BorderBrush" Value="#FF007ACC"/>
+        </Style>
+        <Style Selector="ComboBox">
+            <Setter Property="Background" Value="#FF3C3C3C"/>
+            <Setter Property="Foreground" Value="#FFD4D4D4"/>
+            <Setter Property="BorderBrush" Value="#FF3F3F46"/>
+            <Setter Property="Padding" Value="8"/>
+        </Style>
+        <Style Selector="ComboBox:focus /template/ Border#Background">
+            <Setter Property="BorderBrush" Value="#FF007ACC"/>
+        </Style>
+        <Style Selector="TextBlock">
+            <Setter Property="Foreground" Value="#FFD4D4D4"/>
+        </Style>
+        <Style Selector="TextBlock.label">
+            <Setter Property="FontWeight" Value="Medium"/>
+            <Setter Property="Margin" Value="0,0,0,4"/>
+        </Style>
+        <Style Selector="Button">
+            <Setter Property="Background" Value="#FF0E639C"/>
+            <Setter Property="Foreground" Value="#FFFFFFFF"/>
+            <Setter Property="BorderThickness" Value="0"/>
+            <Setter Property="Padding" Value="16,8"/>
+            <Setter Property="FontSize" Value="13"/>
+            <Setter Property="CornerRadius" Value="3"/>
+            <Setter Property="Cursor" Value="Hand"/>
+        </Style>
+        <Style Selector="Button:pointerover /template/ ContentPresenter">
+            <Setter Property="Background" Value="#FF1177BB"/>
+        </Style>
+        <Style Selector="Button.secondary">
+            <Setter Property="Background" Value="#FF3E3E42"/>
+        </Style>
+        <Style Selector="Button.secondary:pointerover /template/ ContentPresenter">
+            <Setter Property="Background" Value="#FF505050"/>
+        </Style>
+    </Window.Styles>
+
+    <ScrollViewer VerticalScrollBarVisibility="Auto"
+                  HorizontalScrollBarVisibility="Disabled">
+        <StackPanel Margin="28,24"
+                    Spacing="18">
+
+            <!-- Process Name -->
+            <StackPanel Spacing="4">
+                <TextBlock Text="Process Name" Classes="label"/>
+                <TextBox x:Name="ProcessNameBox"
+                         Text="*"
+                         Watermark="e.g. firefox.exe;chrome.exe"/>
+                <TextBlock Text="Semicolon-separated; * = any process"
+                           FontSize="11"
+                           Foreground="#FF999999"
+                           Margin="0,2,0,0"/>
+            </StackPanel>
+
+            <!-- Target Hosts -->
+            <StackPanel Spacing="4">
+                <TextBlock Text="Target Hosts" Classes="label"/>
+                <TextBox x:Name="TargetHostsBox"
+                         Text="*"
+                         Watermark="e.g. 192.168.*.*;10.0.0.1"/>
+                <TextBlock Text="Semicolon-separated IP patterns; * = any"
+                           FontSize="11"
+                           Foreground="#FF999999"
+                           Margin="0,2,0,0"/>
+            </StackPanel>
+
+            <!-- Target Ports -->
+            <StackPanel Spacing="4">
+                <TextBlock Text="Target Ports" Classes="label"/>
+                <TextBox x:Name="TargetPortsBox"
+                         Text="*"
+                         Watermark="e.g. 80;443;8000-9000"/>
+                <TextBlock Text="Semicolon or comma separated; * = any; supports ranges"
+                           FontSize="11"
+                           Foreground="#FF999999"
+                           Margin="0,2,0,0"/>
+            </StackPanel>
+
+            <!-- Protocol -->
+            <StackPanel Spacing="4">
+                <TextBlock Text="Protocol" Classes="label"/>
+                <ComboBox x:Name="ProtocolCombo" SelectedIndex="0">
+                    <ComboBoxItem Tag="TCP">TCP</ComboBoxItem>
+                    <ComboBoxItem Tag="UDP">UDP</ComboBoxItem>
+                    <ComboBoxItem Tag="BOTH">Both (TCP + UDP)</ComboBoxItem>
+                </ComboBox>
+            </StackPanel>
+
+            <!-- Action -->
+            <StackPanel Spacing="4">
+                <TextBlock Text="Action" Classes="label"/>
+                <ComboBox x:Name="ActionCombo" SelectedIndex="0">
+                    <ComboBoxItem Tag="PROXY">Proxy</ComboBoxItem>
+                    <ComboBoxItem Tag="DIRECT">Direct</ComboBoxItem>
+                    <ComboBoxItem Tag="BLOCK">Block</ComboBoxItem>
+                </ComboBox>
+            </StackPanel>
+
+            <!-- Rule Section -->
+            <StackPanel Spacing="4">
+                <TextBlock Text="Rule Section" Classes="label"/>
+                <ComboBox x:Name="SectionCombo" SelectedIndex="0">
+                    <ComboBoxItem Tag="Active">Active - prioritized app-specific rules</ComboBoxItem>
+                    <ComboBoxItem Tag="Static">Static - always-on fallback rules</ComboBoxItem>
+                </ComboBox>
+            </StackPanel>
+
+            <!-- Action Buttons -->
+            <StackPanel Orientation="Horizontal"
+                        HorizontalAlignment="Right"
+                        Spacing="12"
+                        Margin="0,12,0,0">
+                <Button Content="Cancel"
+                        Classes="secondary"
+                        x:Name="CancelButton"
+                        Width="100"/>
+                <Button Content="Save Rule"
+                        x:Name="SaveButton"
+                        Width="130"/>
+            </StackPanel>
+        </StackPanel>
+    </ScrollViewer>
+</Window>
