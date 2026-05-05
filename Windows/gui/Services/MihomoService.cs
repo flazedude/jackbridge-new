@@ -671,7 +671,7 @@ dns:
     private static string NormalizeLogLevel(string value)
     {
         value = value?.Trim().ToLowerInvariant() ?? "";
-        return value is "debug" or "info" or "warning" or "error" or "silent" ? value : "info";
+        return value is "debug" or "info" or "warning" or "error" or "silent" ? value : "error";
     }
 
     private static string BuildRulePreset(BuiltInProxyConfig config)

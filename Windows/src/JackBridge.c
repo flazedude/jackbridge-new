@@ -1850,7 +1850,14 @@ static DWORD WINAPI udp_relay_server(LPVOID arg)
                         udp_associate_connected = establish_udp_associate();
                         if (!udp_associate_connected)
                         {
-                            log_message("[UDP RELAY] Cannot send - UDP ASSOCIATE not established");
+                            // Rate-limit: log at most once every 30 seconds
+                            static ULONGLONG last_udp_err_log = 0;
+                            ULONGLONG now_udp = GetTickCount64();
+                            if (now_udp - last_udp_err_log > 30000)
+                            {
+                                log_message("[UDP RELAY] Cannot send - UDP ASSOCIATE not established");
+                                last_udp_err_log = now_udp;
+                            }
                             continue;
                         }
                     }

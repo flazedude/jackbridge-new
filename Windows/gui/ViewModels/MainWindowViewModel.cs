@@ -335,6 +335,9 @@ public class MainWindowViewModel : ViewModelBase
         {
             if (SetProperty(ref _isTrafficLoggingEnabled, value))
             {
+                if (_connectionsVm != null)
+                    _connectionsVm.IsTrafficLoggingEnabled = value;
+
                 if (value)
                 {
                     JackBridgeService.SetTrafficLoggingEnabled(true);
@@ -566,6 +569,22 @@ public class MainWindowViewModel : ViewModelBase
         set => SetProperty(ref _activityVm, value);
     }
 
+    // ── Mihomo logging ──────────────────────────────────────────
+    private bool _isMihomoLoggingEnabled = true;
+    private int _mihomoLogLevelIndex = 3; // "error"
+
+    public ICommand ToggleMihomoLoggingCommand { get; }
+
+    private void OnMihomoLogLevelChanged(string level)
+    {
+        if (string.IsNullOrWhiteSpace(level)) return;
+        _mihomoLogLevelIndex = level.ToLowerInvariant() switch
+        {
+            "debug" => 0, "info" => 1, "warning" => 2, "error" => 3, "silent" => 4, _ => 1
+        };
+        _ = SetMihomoLogLevelAsync(level);
+    }
+
     public MainWindowViewModel()
     {
         NavigateHomeCommand = new RelayCommand(NavigateToHome);
@@ -573,6 +592,13 @@ public class MainWindowViewModel : ViewModelBase
         NavigateActivityCommand = new RelayCommand(NavigateToActivity);
         NavigateToRulesCommand = new RelayCommand(NavigateToRules);
         NavigateToSettingsCommand = new RelayCommand(NavigateToSettings);
+
+        ToggleMihomoLoggingCommand = new RelayCommand(() =>
+        {
+            _isMihomoLoggingEnabled = !_isMihomoLoggingEnabled;
+            if (_activityVm != null)
+                _activityVm.IsMihomoLoggingEnabled = _isMihomoLoggingEnabled;
+        });
 
         EnsureChildViewModels();
 
@@ -896,20 +922,72 @@ public class MainWindowViewModel : ViewModelBase
         ShowAboutCommand.Execute(null);
     }
 
+    private async Task SetMihomoLogLevelAsync(string level)
+    {
+        try
+        {
+            if (_mihomoService == null || !_mihomoService.IsRunning)
+                return;
+
+            var controllerPort = _builtInProxy.ControllerPort;
+            var secret = _builtInProxy.ControllerSecret;
+            if (string.IsNullOrWhiteSpace(controllerPort))
+                return;
+
+            using var client = new System.Net.Http.HttpClient { Timeout = TimeSpan.FromSeconds(3) };
+            var url = $"http://127.0.0.1:{controllerPort}/configs";
+            using var request = new System.Net.Http.HttpRequestMessage(
+                System.Net.Http.HttpMethod.Patch, url);
+            if (!string.IsNullOrWhiteSpace(secret))
+                request.Headers.Authorization = new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", secret);
+            request.Content = new System.Net.Http.StringContent(
+                $"{{\"log-level\": \"{level}\"}}",
+                System.Text.Encoding.UTF8,
+                "application/json");
+            await client.SendAsync(request);
+            QueueActivityLog($"Mihomo log level set to {level}");
+        }
+        catch (Exception ex)
+        {
+            QueueActivityLog($"Failed to set mihomo log level: {ex.Message}");
+        }
+    }
+
+    private void QueueMihomoLog(string message)
+    {
+        if (_isMihomoLoggingEnabled)
+            QueueActivityLog(message);
+    }
+
     private void EnsureChildViewModels()
     {
         if (_homeVm == null)
         {
-            _homeVm = new HomeViewModel(ToggleProxyEnabledCommand, NavigateToRulesCommand, NavigateToSettingsCommand);
+            _homeVm = new HomeViewModel(
+                ToggleProxyEnabledCommand,
+                NavigateToRulesCommand,
+                NavigateToSettingsCommand,
+                OnMihomoLogLevelChanged,
+                () => IsTrafficLoggingEnabled = !IsTrafficLoggingEnabled)
+            {
+                IsTrafficLoggingEnabled = _isTrafficLoggingEnabled,
+                MihomoLogLevelIndex = _mihomoLogLevelIndex
+            };
             _connectionsVm = new ConnectionsViewModel(
                 ObservedProcesses,
                 SearchConnectionsCommand,
                 ClearConnectionsLogCommand,
-                AddObservedProcessRuleCommand);
+                AddObservedProcessRuleCommand,
+                ToggleTrafficLoggingCommand,
+                IsTrafficLoggingEnabled);
             _activityVm = new ActivityViewModel(
                 SearchActivityCommand,
                 ClearActivityLogCommand,
-                AddRuleCommand);
+                AddRuleCommand,
+                ToggleMihomoLoggingCommand,
+                OnMihomoLogLevelChanged,
+                _isMihomoLoggingEnabled,
+                _mihomoLogLevelIndex);
         }
     }
 
@@ -922,12 +1000,20 @@ public class MainWindowViewModel : ViewModelBase
             _homeVm.ActiveRulesCount = ProxyRules.Count(r => r.IsEnabled);
             _homeVm.RecentActivity = _activityLog;
             _homeVm.RecentConnections = _connectionsLog;
+            _homeVm.IsTrafficLoggingEnabled = _isTrafficLoggingEnabled;
+            _homeVm.MihomoLogLevelIndex = _mihomoLogLevelIndex;
         }
         if (_connectionsVm != null)
         {
             _connectionsVm.HasObservedProcesses = HasObservedProcesses;
             _connectionsVm.SearchText = _connectionsSearchText;
             _connectionsVm.FilteredLog = _filteredConnectionsLog;
+            _connectionsVm.IsTrafficLoggingEnabled = _isTrafficLoggingEnabled;
+        }
+        if (_activityVm != null)
+        {
+            _activityVm.IsMihomoLoggingEnabled = _isMihomoLoggingEnabled;
+            _activityVm.MihomoLogLevelIndex = _mihomoLogLevelIndex;
         }
     }
 
@@ -1186,7 +1272,7 @@ public class MainWindowViewModel : ViewModelBase
         {
             QueueActivityLog("STEP 2/3: Starting built-in mihomo core...");
             _mihomoService ??= new MihomoService();
-            var mihomoTask = Task.Run(() => _mihomoService.StartAsync(_builtInProxy, QueueActivityLog));
+            var mihomoTask = Task.Run(() => _mihomoService.StartAsync(_builtInProxy, QueueMihomoLog));
             if (!mihomoTask.Wait(TimeSpan.FromSeconds(10)) || !mihomoTask.Result)
             {
                 if (!mihomoTask.IsCompleted)

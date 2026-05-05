@@ -40,7 +40,7 @@ public class ProxySettingsViewModel : ViewModelBase
     private string _controllerPort = "9090";
     private string _controllerSecret = "";
     private string _mode = "rule";
-    private string _logLevel = "info";
+    private string _logLevel = "error";
     private bool _allowLan;
     private bool _ipv6 = true;
     private bool _unifiedDelay = true;
@@ -244,7 +244,7 @@ public class ProxySettingsViewModel : ViewModelBase
         ControllerPort = string.IsNullOrWhiteSpace(initialBuiltInProxy.ControllerPort) ? "9090" : initialBuiltInProxy.ControllerPort;
         ControllerSecret = initialBuiltInProxy.ControllerSecret;
         Mode = string.IsNullOrWhiteSpace(initialBuiltInProxy.Mode) ? "rule" : initialBuiltInProxy.Mode;
-        LogLevel = string.IsNullOrWhiteSpace(initialBuiltInProxy.LogLevel) ? "info" : initialBuiltInProxy.LogLevel;
+        LogLevel = string.IsNullOrWhiteSpace(initialBuiltInProxy.LogLevel) ? "error" : initialBuiltInProxy.LogLevel;
         AllowLan = initialBuiltInProxy.AllowLan;
         Ipv6 = initialBuiltInProxy.Ipv6;
         UnifiedDelay = initialBuiltInProxy.UnifiedDelay;

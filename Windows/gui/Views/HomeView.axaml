@@ -89,12 +89,21 @@
                     CornerRadius="14"
                     Padding="16">
                 <DockPanel>
-                    <TextBlock DockPanel.Dock="Top"
-                               Text="Activity"
-                               FontSize="14"
-                               FontWeight="600"
-                               Foreground="#FFFFFFFF"
-                               Margin="0,0,0,10"/>
+                    <Grid DockPanel.Dock="Top"
+                          ColumnDefinitions="Auto,*,Auto"
+                          Margin="0,0,0,10">
+                        <TextBlock Grid.Column="0"
+                                   Text="Activity"
+                                   FontSize="14"
+                                   FontWeight="600"
+                                   Foreground="#FFFFFFFF"
+                                   VerticalAlignment="Center"/>
+                        <ComboBox Grid.Column="2"
+                                  ItemsSource="{Binding LogLevels}"
+                                  SelectedIndex="{Binding MihomoLogLevelIndex}"
+                                  Width="80"
+                                  FontSize="11"/>
+                    </Grid>
                     <Border Background="#FF1d1d1f"
                             CornerRadius="6"
                             Padding="10">
@@ -118,12 +127,21 @@
                     CornerRadius="14"
                     Padding="16">
                 <DockPanel>
-                    <TextBlock DockPanel.Dock="Top"
-                               Text="Connections"
-                               FontSize="14"
-                               FontWeight="600"
-                               Foreground="#FFFFFFFF"
-                               Margin="0,0,0,10"/>
+                    <Grid DockPanel.Dock="Top"
+                          ColumnDefinitions="Auto,*,Auto"
+                          Margin="0,0,0,10">
+                        <TextBlock Grid.Column="0"
+                                   Text="Connections"
+                                   FontSize="14"
+                                   FontWeight="600"
+                                   Foreground="#FFFFFFFF"
+                                   VerticalAlignment="Center"/>
+                        <CheckBox Grid.Column="2"
+                                  Content="Log Traffic"
+                                  IsChecked="{Binding IsTrafficLoggingEnabled}"
+                                  FontSize="11"
+                                  Foreground="#FFcccccc"/>
+                    </Grid>
                     <Border Background="#FF1d1d1f"
                             CornerRadius="6"
                             Padding="10">

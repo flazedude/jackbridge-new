@@ -16,7 +16,7 @@
                 Padding="12"
                 BorderBrush="#FF3F3F46"
                 BorderThickness="0,0,0,1">
-            <Grid ColumnDefinitions="*,Auto">
+            <Grid ColumnDefinitions="*,Auto,Auto">
                 <TextBox Grid.Column="0"
                          Text="{Binding SearchText}"
                          Watermark="Search connections (press Enter)..."
@@ -26,6 +26,11 @@
                     </TextBox.KeyBindings>
                 </TextBox>
                 <Button Grid.Column="1"
+                        Content="{Binding TrafficLoggingLabel}"
+                        Classes="secondary"
+                        Command="{Binding ToggleTrafficLoggingCommand}"
+                        Padding="12,6" Margin="0,0,8,0"/>
+                <Button Grid.Column="2"
                         Content="Clear"
                         Classes="secondary"
                         Command="{Binding ClearCommand}"

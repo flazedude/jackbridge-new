@@ -1,4 +1,6 @@
+using System;
 using System.Collections.ObjectModel;
+using System.Collections.Generic;
 using System.Windows.Input;
 using JackBridge.GUI.Common;
 
@@ -50,6 +52,8 @@ public class ActivityViewModel : ViewModelBase
     private string _searchText = "";
     private bool _hasEntries;
     private bool _hasNoEntries = true;
+    private bool _isMihomoLoggingEnabled = true;
+    private int _mihomoLogLevelIndex = 3; // "error"
 
     public string SearchText
     {
@@ -69,20 +73,55 @@ public class ActivityViewModel : ViewModelBase
         set => SetProperty(ref _hasNoEntries, value);
     }
 
+    public bool IsMihomoLoggingEnabled
+    {
+        get => _isMihomoLoggingEnabled;
+        set
+        {
+            if (SetProperty(ref _isMihomoLoggingEnabled, value))
+                OnPropertyChanged(nameof(MihomoLoggingLabel));
+        }
+    }
+
+    public string MihomoLoggingLabel => IsMihomoLoggingEnabled ? "Mihomo Log: On" : "Mihomo Log: Off";
+
+    public int MihomoLogLevelIndex
+    {
+        get => _mihomoLogLevelIndex;
+        set
+        {
+            if (SetProperty(ref _mihomoLogLevelIndex, value))
+                OnLogLevelChanged?.Invoke(LogLevels[value]);
+        }
+    }
+
+    public List<string> LogLevels { get; } = new() { "debug", "info", "warning", "error", "silent" };
+
     public ObservableCollection<LogEntry> LogEntries { get; } = new();
 
     public ICommand SearchCommand { get; }
     public ICommand ClearCommand { get; }
     public ICommand AddRuleCommand { get; }
+    public ICommand ToggleMihomoLoggingCommand { get; }
+
+    public Action<string>? OnLogLevelChanged { get; set; }
 
     public ActivityViewModel(
         ICommand searchCommand,
         ICommand clearCommand,
-        ICommand addRuleCommand)
+        ICommand addRuleCommand,
+        ICommand toggleMihomoLoggingCommand,
+        Action<string> onLogLevelChanged,
+        bool isMihomoLoggingEnabled,
+        int mihomoLogLevelIndex)
     {
         SearchCommand = searchCommand;
         ClearCommand = clearCommand;
         AddRuleCommand = addRuleCommand;
+        ToggleMihomoLoggingCommand = toggleMihomoLoggingCommand;
+        OnLogLevelChanged = onLogLevelChanged;
+        _isMihomoLoggingEnabled = isMihomoLoggingEnabled;
+        _mihomoLogLevelIndex = mihomoLogLevelIndex;
 
         LogEntries.CollectionChanged += (_, _) =>
         {

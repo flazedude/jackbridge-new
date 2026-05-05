@@ -1,6 +1,5 @@
 using System;
-using System.Collections.ObjectModel;
-using System.Linq;
+using System.Collections.Generic;
 using System.Windows.Input;
 using JackBridge.GUI.Common;
 
@@ -14,6 +13,10 @@ public class HomeViewModel : ViewModelBase
     private string _engineType = "External";
     private int _activeRulesCount;
     private string _recentActivity = "";
+    private string _recentConnections = "";
+    private bool _isTrafficLoggingEnabled = true;
+    private bool _isMihomoLoggingEnabled = true;
+    private int _mihomoLogLevelIndex = 3; // "error"
 
     public bool IsProxyEnabled
     {
@@ -56,25 +59,63 @@ public class HomeViewModel : ViewModelBase
         set => SetProperty(ref _recentActivity, value);
     }
 
-    private string _recentConnections = "";
-
     public string RecentConnections
     {
         get => _recentConnections;
         set => SetProperty(ref _recentConnections, value);
     }
 
+    public bool IsTrafficLoggingEnabled
+    {
+        get => _isTrafficLoggingEnabled;
+        set
+        {
+            if (SetProperty(ref _isTrafficLoggingEnabled, value))
+                OnTrafficLoggingChanged?.Invoke();
+        }
+    }
+
+    public bool IsMihomoLoggingEnabled
+    {
+        get => _isMihomoLoggingEnabled;
+        set
+        {
+            if (SetProperty(ref _isMihomoLoggingEnabled, value))
+                OnPropertyChanged(nameof(MihomoLoggingLabel));
+        }
+    }
+
+    public string MihomoLoggingLabel => IsMihomoLoggingEnabled ? "Mihomo Log: On" : "Mihomo Log: Off";
+
+    public int MihomoLogLevelIndex
+    {
+        get => _mihomoLogLevelIndex;
+        set
+        {
+            if (SetProperty(ref _mihomoLogLevelIndex, value))
+                OnLogLevelChanged?.Invoke(LogLevels[value]);
+        }
+    }
+
+    public List<string> LogLevels { get; } = new() { "debug", "info", "warning", "error", "silent" };
+
     public ICommand ToggleProxyCommand { get; }
     public ICommand OpenRulesCommand { get; }
     public ICommand OpenSettingsCommand { get; }
+    public Action<string>? OnLogLevelChanged { get; set; }
+    public Action? OnTrafficLoggingChanged { get; set; }
 
     public HomeViewModel(
         ICommand toggleProxyCommand,
         ICommand openRulesCommand,
-        ICommand openSettingsCommand)
+        ICommand openSettingsCommand,
+        Action<string> onLogLevelChanged,
+        Action onTrafficLoggingChanged)
     {
         ToggleProxyCommand = toggleProxyCommand;
         OpenRulesCommand = openRulesCommand;
         OpenSettingsCommand = openSettingsCommand;
+        OnLogLevelChanged = onLogLevelChanged;
+        OnTrafficLoggingChanged = onTrafficLoggingChanged;
     }
 }

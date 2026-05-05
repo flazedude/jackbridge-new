@@ -35,7 +35,7 @@ public class BuiltInProxyConfig
     public string ControllerPort { get; set; } = "9090";
     public string ControllerSecret { get; set; } = "";
     public string Mode { get; set; } = "rule";
-    public string LogLevel { get; set; } = "info";
+    public string LogLevel { get; set; } = "error";
     public bool AllowLan { get; set; } = false;
     public bool Ipv6 { get; set; } = true;
     public bool UnifiedDelay { get; set; } = true;
