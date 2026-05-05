@@ -20,7 +20,7 @@
 #define PID_CACHE_SIZE 1024
 #define PID_CACHE_TTL_MS 1000
 #define PID_CACHE_TTL_UDP_MS 30000
-#define NUM_PACKET_THREADS 4
+#define NUM_PACKET_THREADS 2
 #define CONNECTION_HASH_SIZE 256
 #define UDP_FLOW_CACHE_SIZE 512
 #define UDP_FLOW_CACHE_TTL_MS 30000
@@ -3314,8 +3314,8 @@ JACKBRIDGE_API BOOL JackBridge_Start(void)
     }
 
     log_message("JackBridge_Start: WinDivert handle opened successfully.");
-    WinDivertSetParam(windivert_handle, WINDIVERT_PARAM_QUEUE_LENGTH, 8192);
-    WinDivertSetParam(windivert_handle, WINDIVERT_PARAM_QUEUE_TIME, 8);  // 8ms for low latency
+    WinDivertSetParam(windivert_handle, WINDIVERT_PARAM_QUEUE_LENGTH, 16384);
+    WinDivertSetParam(windivert_handle, WINDIVERT_PARAM_QUEUE_TIME, 16);  // 16ms batching for lower CPU
 
     log_message("JackBridge_Start: creating %d packet processor threads...", NUM_PACKET_THREADS);
     for (int i = 0; i < NUM_PACKET_THREADS; i++)

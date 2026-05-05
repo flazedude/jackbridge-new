@@ -937,7 +937,7 @@ public class MainWindowViewModel : ViewModelBase
             using var client = new System.Net.Http.HttpClient { Timeout = TimeSpan.FromSeconds(3) };
             var url = $"http://127.0.0.1:{controllerPort}/configs";
             using var request = new System.Net.Http.HttpRequestMessage(
-                System.Net.Http.HttpMethod.Patch, url);
+                System.Net.Http.HttpMethod.Put, url);
             if (!string.IsNullOrWhiteSpace(secret))
                 request.Headers.Authorization = new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", secret);
             request.Content = new System.Net.Http.StringContent(
@@ -1282,6 +1282,10 @@ public class MainWindowViewModel : ViewModelBase
                 return false;
             }
             QueueActivityLog("OK: Built-in mihomo core is listening.");
+
+            // Apply saved log level to mihomo via REST API
+            var logLevel = (_builtInProxy.LogLevel ?? "error").ToLowerInvariant();
+            _ = SetMihomoLogLevelAsync(logLevel);
         }
 
         QueueActivityLog("STEP 3/3: Starting native transparent proxy engine (WinDivert)...");
@@ -1434,6 +1438,10 @@ public class MainWindowViewModel : ViewModelBase
             _currentProxyUsername = config.ProxyUsername ?? "";
             _currentProxyPassword = config.ProxyPassword ?? "";
             _builtInProxy = config.BuiltInProxy ?? new BuiltInProxyConfig();
+            _mihomoLogLevelIndex = (_builtInProxy.LogLevel ?? "error").ToLowerInvariant() switch
+            {
+                "debug" => 0, "info" => 1, "warning" => 2, "error" => 3, "silent" => 4, _ => 3
+            };
 
             DnsViaProxy = config.DnsViaProxy;
             LocalhostViaProxy = config.LocalhostViaProxy;
