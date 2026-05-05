@@ -21,7 +21,7 @@ public class MainWindowViewModel : ViewModelBase
     private const int MAX_CONNECTION_LOG_LINES = 100;
     private const int MAX_ACTIVITY_LOG_LINES = 100;
 
-    private string _title = "JackBridge v3.0 Beta";
+    private string _title = "JackBridge v3.5";
     private int _selectedTabIndex;
     private string _connectionsLog = "";
     private string _activityLog = "";
@@ -1272,12 +1272,15 @@ public class MainWindowViewModel : ViewModelBase
         }
     }
 
+    private int _builtInHealthFailCount = 0;
+
     private void StartBuiltInHealthTimer()
     {
         if (!_proxyEngine.Equals("BuiltIn", StringComparison.OrdinalIgnoreCase))
             return;
 
         StopBuiltInHealthTimer();
+        _builtInHealthFailCount = 0;
         _builtInHealthTimer = new System.Threading.Timer(_ =>
         {
             if (!_isProxyEnabled || !_proxyEngine.Equals("BuiltIn", StringComparison.OrdinalIgnoreCase))
@@ -1287,13 +1290,20 @@ public class MainWindowViewModel : ViewModelBase
             }
 
             if (_mihomoService?.IsListening(_builtInProxy) == true)
+            {
+                _builtInHealthFailCount = 0;
+                return;
+            }
+
+            _builtInHealthFailCount++;
+            if (_builtInHealthFailCount < 3)
                 return;
 
             QueueActivityLog("ERROR: Built-in proxy core stopped or port is not listening; disabling proxy");
             StopBuiltInHealthTimer();
             _proxyService?.Stop();
             SetProxyEnabledFromRuntime(false);
-        }, null, TimeSpan.FromSeconds(3), TimeSpan.FromSeconds(3));
+        }, null, TimeSpan.FromSeconds(5), TimeSpan.FromSeconds(5));
     }
 
     private void StopBuiltInHealthTimer()

@@ -6,7 +6,7 @@
     <ImplicitUsings>enable</ImplicitUsings>
     <Nullable>enable</Nullable>
     <AssemblyName>JackBridge_CLI</AssemblyName>
-    <Version>3.2.0</Version>
+    <Version>3.5.0</Version>
     <PublishAot>true</PublishAot>
     <InvariantGlobalization>false</InvariantGlobalization>
     <SelfContained>true</SelfContained>

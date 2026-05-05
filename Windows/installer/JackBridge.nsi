@@ -1,18 +1,18 @@
 !define PRODUCT_NAME "JackBridge"
-!define PRODUCT_VERSION "3.2.0"
-!define PRODUCT_PUBLISHER "InterceptSuite"
-!define PRODUCT_WEB_SITE "https://github.com/InterceptSuite/JackBridge"
+!define PRODUCT_VERSION "3.5.0"
+!define PRODUCT_PUBLISHER "Jack Wang"
+!define PRODUCT_WEB_SITE "https://github.com/flazedude/JackBridge"
 !define PRODUCT_UNINST_KEY "Software\Microsoft\Windows\CurrentVersion\Uninstall\${PRODUCT_NAME}"
 !define PRODUCT_UNINST_ROOT_KEY "HKLM"
 
 Unicode True
 
 ; Version Information
-VIProductVersion "3.2.0.0"
+VIProductVersion "3.5.0.0"
 VIAddVersionKey "ProductName" "${PRODUCT_NAME}"
 VIAddVersionKey "ProductVersion" "${PRODUCT_VERSION}"
 VIAddVersionKey "CompanyName" "${PRODUCT_PUBLISHER}"
-VIAddVersionKey "LegalCopyright" "Copyright (c) 2026 ${PRODUCT_PUBLISHER}"
+VIAddVersionKey "LegalCopyright" "Copyright (c) 2026 Jack Wang"
 VIAddVersionKey "FileDescription" "${PRODUCT_NAME} Setup"
 VIAddVersionKey "FileVersion" "${PRODUCT_VERSION}"
 VIAddVersionKey "Comments" "Network Jack Bridge Application"

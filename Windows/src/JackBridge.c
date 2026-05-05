@@ -16,11 +16,16 @@
 #define LOCAL_PROXY_PORT 34010
 #define LOCAL_UDP_RELAY_PORT 34011  // its running UDP port still make sure to not run on same port as TCP, opening same port and tcp and udp cause issue and handling port at relay server response injection
 #define MAX_PROCESS_NAME 256
-#define VERSION "2.0.0-beta"
+#define VERSION "3.5.0"
 #define PID_CACHE_SIZE 1024
 #define PID_CACHE_TTL_MS 1000
+#define PID_CACHE_TTL_UDP_MS 30000
 #define NUM_PACKET_THREADS 4
 #define CONNECTION_HASH_SIZE 256
+#define UDP_FLOW_CACHE_SIZE 512
+#define UDP_FLOW_CACHE_TTL_MS 30000
+#define PROCESS_NAME_CACHE_SIZE 256
+#define PROCESS_NAME_CACHE_TTL_MS 30000
 #define SOCKS5_BUFFER_SIZE 1024
 #define HTTP_BUFFER_SIZE 1024
 #define FILTER_BUFFER_SIZE 512
@@ -59,6 +64,25 @@ typedef struct {
     UINT16 orig_dest_port;
 } CONNECTION_CONFIG;
 
+// UDP flow action cache — avoids re-running the full rule engine for every
+// UDP packet from a DIRECT flow (PROXY flows are already tracked via connection_hash_table).
+typedef struct UDP_FLOW_CACHE_ENTRY {
+    UINT32 src_ip;
+    UINT16 src_port;
+    RuleAction action;
+    ULONGLONG timestamp;
+    struct UDP_FLOW_CACHE_ENTRY *next;
+} UDP_FLOW_CACHE_ENTRY;
+
+// Process name cache by PID — avoids OpenProcess/QueryFullProcessImageNameA
+// kernel round-trips for repeat connections from the same process.
+typedef struct PROCESS_NAME_CACHE_ENTRY {
+    DWORD pid;
+    char process_name[MAX_PROCESS_NAME];
+    ULONGLONG timestamp;
+    struct PROCESS_NAME_CACHE_ENTRY *next;
+} PROCESS_NAME_CACHE_ENTRY;
+
 typedef struct {
     SOCKET from_socket;
     SOCKET to_socket;
@@ -85,9 +109,21 @@ typedef struct PID_CACHE_ENTRY {
 
 static CONNECTION_INFO *connection_hash_table[CONNECTION_HASH_SIZE] = {NULL};
 static LOGGED_CONNECTION *logged_connections = NULL;
+// Per-bucket SRWLOCKs replace the single global mutex — eliminates contention between
+// unrelated hash buckets under high-throughput packet processing.
+static SRWLOCK connection_locks[CONNECTION_HASH_SIZE];  // one per hash bucket
+static SRWLOCK pid_cache_locks[PID_CACHE_SIZE];         // one per cache bucket
+static SRWLOCK logged_lock = SRWLOCK_INIT;              // protects logged_connections list
 static PROCESS_RULE *rules_list = NULL;
+
+// UDP flow action cache — skips rule engine for repeat UDP packets from DIRECT flows
+static UDP_FLOW_CACHE_ENTRY *udp_flow_cache[UDP_FLOW_CACHE_SIZE] = {NULL};
+static SRWLOCK udp_flow_locks[UDP_FLOW_CACHE_SIZE];
+
+// Process name cache — avoids kernel calls for repeat PIDs
+static PROCESS_NAME_CACHE_ENTRY *process_name_cache[PROCESS_NAME_CACHE_SIZE] = {NULL};
+static SRWLOCK process_name_locks[PROCESS_NAME_CACHE_SIZE];
 static UINT32 g_next_rule_id = 1;
-static HANDLE lock = NULL;
 static HANDLE windivert_handle = INVALID_HANDLE_VALUE;
 static HANDLE packet_thread[NUM_PACKET_THREADS] = {NULL};
 static HANDLE proxy_thread = NULL;
@@ -107,6 +143,7 @@ static DWORD g_current_process_id = 0;
 static BOOL g_traffic_logging_enabled = TRUE;
 
 static char g_proxy_host[256] = "";  // Can be IP address or hostname
+static UINT32 g_proxy_host_ip = 0;   // Cached resolved IP — resolve once, reuse per-connection
 static UINT16 g_proxy_port = 0;
 static UINT16 g_local_relay_port = LOCAL_PROXY_PORT;
 static UINT16 g_local_udp_relay_port = LOCAL_UDP_RELAY_PORT;
@@ -334,10 +371,17 @@ static void add_logged_connection(DWORD pid, UINT32 dest_ip, UINT16 dest_port, R
 static void clear_logged_connections(void);
 static BOOL is_broadcast_or_multicast(UINT32 ip);
 static DWORD get_cached_pid(UINT32 src_ip, UINT16 src_port, BOOL is_udp);
+static BOOL get_cached_udp_action(UINT32 src_ip, UINT16 src_port, RuleAction *out_action);
+static void cache_udp_action(UINT32 src_ip, UINT16 src_port, RuleAction action);
+static void clear_udp_flow_cache(void);
+static BOOL get_cached_process_name(DWORD pid, char *out_name, DWORD name_size);
+static void cache_process_name(DWORD pid, const char *process_name);
+static void clear_process_name_cache(void);
 static void cache_pid(UINT32 src_ip, UINT16 src_port, DWORD pid, BOOL is_udp);
 static void clear_pid_cache(void);
 static void update_has_active_rules(void);
 static BOOL is_other_jackbridge_relay_port(UINT16 port);
+
 
 
 static DWORD WINAPI packet_processor(LPVOID arg)
@@ -423,6 +467,20 @@ static DWORD WINAPI packet_processor(LPVOID arg)
                     RuleAction action;
                     DWORD pid = 0;
 
+                    // Check UDP flow cache first — skip full rule engine for repeat DIRECT/BLOCK packets
+                    if (get_cached_udp_action(src_ip, src_port, &action))
+                    {
+                        if (action == RULE_ACTION_DIRECT)
+                        {
+                            WinDivertSend(windivert_handle, packet, packet_len, NULL, &addr);
+                            continue;
+                        }
+                        // For cached BLOCK, just drop
+                        if (action == RULE_ACTION_BLOCK)
+                            continue;
+                        // For cached PROXY, fall through to normal processing (needs connection setup)
+                    }
+
                     if (dest_port == 53 && !g_dns_via_proxy)
                         action = RULE_ACTION_DIRECT;
                     else
@@ -441,6 +499,10 @@ static DWORD WINAPI packet_processor(LPVOID arg)
                     if (action == RULE_ACTION_PROXY && (dest_port == 67 || dest_port == 68))
                         action = RULE_ACTION_DIRECT;
 
+                    // Cache DIRECT and BLOCK decisions to skip rule engine on next packet
+                    if (action == RULE_ACTION_DIRECT || action == RULE_ACTION_BLOCK)
+                        cache_udp_action(src_ip, src_port, action);
+
                     // only log if callback is set
                     // reuse pid from check_process_rule
                     // CLI use no log flag
@@ -448,7 +510,9 @@ static DWORD WINAPI packet_processor(LPVOID arg)
                     {
                         char process_name[MAX_PROCESS_NAME];
 
-                        if (pid > 0 && get_process_name_from_pid(pid, process_name, sizeof(process_name)))
+                        if (pid > 0 && (get_cached_process_name(pid, process_name, sizeof(process_name)) ||
+                            (get_process_name_from_pid(pid, process_name, sizeof(process_name)) &&
+                             (cache_process_name(pid, process_name), TRUE))))
                         {
                             if (!is_connection_already_logged(pid, dest_ip, dest_port, action))
                             {
@@ -861,7 +925,6 @@ static DWORD get_process_id_from_udp_connection(UINT32 src_ip, UINT16 src_port)
     }
 
     // Second pass: If not found, try matching port on 0.0.0.0 (INADDR_ANY)
-    // Many UDP applications bind to 0.0.0.0:port instead of specific IP
     if (pid == 0)
     {
         for (DWORD i = 0; i < udp_table->dwNumEntries; i++)
@@ -1274,18 +1337,26 @@ static RuleAction check_process_rule(UINT32 src_ip, UINT16 src_port, UINT32 dest
     if (pid == g_current_process_id)
         return RULE_ACTION_DIRECT;
 
-    if (!get_process_name_from_pid(pid, process_name, sizeof(process_name)))
-        return RULE_ACTION_DIRECT;
+    // Try process name cache first (avoids OpenProcess kernel round-trip for repeat PIDs)
+    if (!get_cached_process_name(pid, process_name, sizeof(process_name)))
+    {
+        if (!get_process_name_from_pid(pid, process_name, sizeof(process_name)))
+            return RULE_ACTION_DIRECT;
+        cache_process_name(pid, process_name);
+    }
 
     // Hard-bypass proxy core processes to prevent double-proxy loops.
-    // These must be DIRECT regardless of any user rules.
+    // TCP only — UDP (DNS) is allowed through normal rules so blocked DNS
+    // servers can still be reached via the proxy without creating a loop
+    // (mihomo's upstream DNS forwarding uses DoH/TCP, not UDP).
     const char *process_filename = extract_filename(process_name);
-    if (_stricmp(process_filename, "mihomo.exe") == 0 ||
-        _stricmp(process_filename, "jackbridge-mihomo.exe") == 0 ||
-        _stricmp(process_filename, "verge-mihomo.exe") == 0 ||
-        _stricmp(process_filename, "clash-verge.exe") == 0 ||
-        _stricmp(process_filename, "clash-core-service.exe") == 0 ||
-        _stricmp(process_filename, "clash-core-service") == 0)
+    if (!is_udp &&
+        (_stricmp(process_filename, "mihomo.exe") == 0 ||
+         _stricmp(process_filename, "jackbridge-mihomo.exe") == 0 ||
+         _stricmp(process_filename, "verge-mihomo.exe") == 0 ||
+         _stricmp(process_filename, "clash-verge.exe") == 0 ||
+         _stricmp(process_filename, "clash-core-service.exe") == 0 ||
+         _stricmp(process_filename, "clash-core-service") == 0))
     {
         return RULE_ACTION_DIRECT;
     }
@@ -1620,7 +1691,7 @@ static BOOL establish_udp_associate(void)
 
     configure_tcp_socket(tcp_sock, 262144, 3000);
 
-    UINT32 socks5_ip = resolve_hostname(g_proxy_host);
+    UINT32 socks5_ip = g_proxy_host_ip;
     if (socks5_ip == 0)
     {
         closesocket(tcp_sock);
@@ -1868,15 +1939,15 @@ static DWORD WINAPI udp_relay_server(LPVOID arg)
                 UINT16 src_port = (recv_buf[8] << 8) | recv_buf[9];
 
                 // Find which local port this packet should go to
-                WaitForSingleObject(lock, INFINITE);
                 struct sockaddr_in target_addr;
                 BOOL found = FALSE;
                 UINT32 target_ip = 0;
                 UINT16 target_port = 0;
 
-                // search all hash for reverse lookup in bucket
+                // search all hash buckets for reverse lookup
                 for (int i = 0; i < CONNECTION_HASH_SIZE && !found; i++)
                 {
+                    AcquireSRWLockShared(&connection_locks[i]);
                     CONNECTION_INFO *conn = connection_hash_table[i];
                     while (conn != NULL)
                     {
@@ -1889,8 +1960,8 @@ static DWORD WINAPI udp_relay_server(LPVOID arg)
                         }
                         conn = conn->next;
                     }
+                    ReleaseSRWLockShared(&connection_locks[i]);
                 }
-                ReleaseMutex(lock);
 
                 if (found)
                 {
@@ -2027,13 +2098,11 @@ static DWORD WINAPI connection_handler(LPVOID arg)
     UINT16 dest_port = config->orig_dest_port;
     SOCKET socks_sock;
     struct sockaddr_in socks_addr;
-    UINT32 socks5_ip;
 
     free(config);
 
-    // Connect to SOCKS5 proxy
-    socks5_ip = resolve_hostname(g_proxy_host);
-    if (socks5_ip == 0)
+    // Connect to SOCKS5 proxy (use cached IP — resolved once on config change)
+    if (g_proxy_host_ip == 0)
     {
         closesocket(client_sock);
         return 1;
@@ -2052,7 +2121,7 @@ static DWORD WINAPI connection_handler(LPVOID arg)
 
     memset(&socks_addr, 0, sizeof(socks_addr));
     socks_addr.sin_family = AF_INET;
-    socks_addr.sin_addr.s_addr = socks5_ip;
+    socks_addr.sin_addr.s_addr = g_proxy_host_ip;
     socks_addr.sin_port = htons(g_proxy_port);
 
     if (connect(socks_sock, (struct sockaddr *)&socks_addr, sizeof(socks_addr)) == SOCKET_ERROR)
@@ -2082,10 +2151,7 @@ static DWORD WINAPI connection_handler(LPVOID arg)
         }
     }
 
-    //
-    // educes thread count by 50% and CPU usage significantly
     TRANSFER_CONFIG *transfer_config = (TRANSFER_CONFIG *)malloc(sizeof(TRANSFER_CONFIG));
-
     if (transfer_config == NULL)
     {
         log_message("Memory allocation failed for transfer_config");
@@ -2097,11 +2163,10 @@ static DWORD WINAPI connection_handler(LPVOID arg)
     transfer_config->from_socket = client_sock;
     transfer_config->to_socket = socks_sock;
 
-    // both transfer in current thread
+    // bidirectional transfer inline (select-based, single thread)
     transfer_handler((LPVOID)transfer_config);
 
-    // Sockets already closed in transfer_handler!
-
+    // Sockets already closed in transfer_handler
     return 0;
 }
 
@@ -2110,12 +2175,11 @@ static DWORD WINAPI transfer_handler(LPVOID arg)
     TRANSFER_CONFIG *config = (TRANSFER_CONFIG *)arg;
     SOCKET sock1 = config->from_socket;  // client socket
     SOCKET sock2 = config->to_socket;     // proxy socket
-    char buf[131072];  // 128KB buffer for high-speed transfers
+    char buf[131072];  // 128KB buffer
     int len;
 
     free(config);
 
-    // monitor BOTH socket in one thread
     while (TRUE)
     {
         fd_set readfds;
@@ -2125,25 +2189,19 @@ static DWORD WINAPI transfer_handler(LPVOID arg)
         FD_SET(sock1, &readfds);  // client
         FD_SET(sock2, &readfds);  // proxy
 
-        // short timeout for responsive upload/download (50ms)
+        // short timeout for responsive bidirectional transfer
         timeout.tv_sec = 0;
         timeout.tv_usec = 50000;  // 50ms
 
         int ready = select(0, &readfds, NULL, NULL, &timeout);
 
         if (ready == SOCKET_ERROR)
-        {
-
             break;
-        }
 
         if (ready == 0)
-        {
-            // timeotjust continue to check again
             continue;
-        }
 
-        // check if  client to proxy
+        // client -> proxy
         if (FD_ISSET(sock1, &readfds))
         {
             len = recv(sock1, buf, sizeof(buf), 0);
@@ -2154,7 +2212,7 @@ static DWORD WINAPI transfer_handler(LPVOID arg)
                 goto cleanup;
         }
 
-        // check if proxyto client
+        // proxy -> client
         if (FD_ISSET(sock2, &readfds))
         {
             len = recv(sock2, buf, sizeof(buf), 0);
@@ -2167,7 +2225,6 @@ static DWORD WINAPI transfer_handler(LPVOID arg)
     }
 
 cleanup:
-    // graceful shutdown
     shutdown(sock1, SD_BOTH);
     shutdown(sock2, SD_BOTH);
     closesocket(sock1);
@@ -2177,9 +2234,9 @@ cleanup:
 
 static void add_connection(UINT16 src_port, UINT32 src_ip, UINT32 dest_ip, UINT16 dest_port)
 {
-    WaitForSingleObject(lock, INFINITE);
-
     int hash = src_port % CONNECTION_HASH_SIZE;
+    AcquireSRWLockExclusive(&connection_locks[hash]);
+
     CONNECTION_INFO *existing = connection_hash_table[hash];
 
     // check if already exists in this hash bucket
@@ -2190,7 +2247,7 @@ static void add_connection(UINT16 src_port, UINT32 src_ip, UINT32 dest_ip, UINT1
             existing->orig_dest_ip = dest_ip;
             existing->orig_dest_port = dest_port;
             existing->is_tracked = TRUE;
-            ReleaseMutex(lock);
+            ReleaseSRWLockExclusive(&connection_locks[hash]);
             return;
         }
         existing = existing->next;
@@ -2198,7 +2255,7 @@ static void add_connection(UINT16 src_port, UINT32 src_ip, UINT32 dest_ip, UINT1
 
     CONNECTION_INFO *conn = (CONNECTION_INFO *)malloc(sizeof(CONNECTION_INFO));
     if (conn == NULL) {
-        ReleaseMutex(lock);
+        ReleaseSRWLockExclusive(&connection_locks[hash]);
         return;
     }
 
@@ -2210,20 +2267,18 @@ static void add_connection(UINT16 src_port, UINT32 src_ip, UINT32 dest_ip, UINT1
     conn->last_activity = GetTickCount64();
 
     // insert at head of hash bucket
-    //reuse hash variable from lookup above
     conn->next = connection_hash_table[hash];
     connection_hash_table[hash] = conn;
-    ReleaseMutex(lock);
+    ReleaseSRWLockExclusive(&connection_locks[hash]);
 }
 
 static BOOL is_connection_tracked(UINT16 src_port)
 {
-    BOOL tracked = FALSE;
-    WaitForSingleObject(lock, INFINITE);
-
-    // Hash table lookup - O(1)
     int hash = src_port % CONNECTION_HASH_SIZE;
+    AcquireSRWLockShared(&connection_locks[hash]);
+
     CONNECTION_INFO *conn = connection_hash_table[hash];
+    BOOL tracked = FALSE;
 
     while (conn != NULL) {
         if (conn->src_port == src_port && conn->is_tracked) {
@@ -2232,18 +2287,17 @@ static BOOL is_connection_tracked(UINT16 src_port)
         }
         conn = conn->next;
     }
-    ReleaseMutex(lock);
+    ReleaseSRWLockShared(&connection_locks[hash]);
     return tracked;
 }
 
 static BOOL get_connection(UINT16 src_port, UINT32 *dest_ip, UINT16 *dest_port)
 {
-    BOOL found = FALSE;
-
-    WaitForSingleObject(lock, INFINITE);
-
     int hash = src_port % CONNECTION_HASH_SIZE;
+    AcquireSRWLockExclusive(&connection_locks[hash]);
+
     CONNECTION_INFO *conn = connection_hash_table[hash];
+    BOOL found = FALSE;
 
     while (conn != NULL)
     {
@@ -2257,16 +2311,16 @@ static BOOL get_connection(UINT16 src_port, UINT32 *dest_ip, UINT16 *dest_port)
         }
         conn = conn->next;
     }
-    ReleaseMutex(lock);
+    ReleaseSRWLockExclusive(&connection_locks[hash]);
 
     return found;
 }
 
 static void remove_connection(UINT16 src_port)
 {
-    WaitForSingleObject(lock, INFINITE);
-
     int hash = src_port % CONNECTION_HASH_SIZE;
+    AcquireSRWLockExclusive(&connection_locks[hash]);
+
     CONNECTION_INFO **conn_ptr = &connection_hash_table[hash];
 
     while (*conn_ptr != NULL)
@@ -2275,12 +2329,173 @@ static void remove_connection(UINT16 src_port)
         {
             CONNECTION_INFO *to_free = *conn_ptr;
             *conn_ptr = (*conn_ptr)->next;
+            ReleaseSRWLockExclusive(&connection_locks[hash]);
             free(to_free);
-            break;
+            return;
         }
         conn_ptr = &(*conn_ptr)->next;
     }
-    ReleaseMutex(lock);
+    ReleaseSRWLockExclusive(&connection_locks[hash]);
+}
+
+// ── UDP Flow Action Cache ──────────────────────────────────────────
+// Caches rule decisions for UDP flows so repeat packets from DIRECT flows
+// skip the entire rule engine (PID lookup, process name, rule matching).
+// PROXY flows are already fast-pathed via connection_hash_table tracking.
+
+static UINT32 udp_flow_hash(UINT32 src_ip, UINT16 src_port)
+{
+    return (src_ip ^ ((UINT32)src_port << 16)) % UDP_FLOW_CACHE_SIZE;
+}
+
+static BOOL get_cached_udp_action(UINT32 src_ip, UINT16 src_port, RuleAction *out_action)
+{
+    UINT32 hash = udp_flow_hash(src_ip, src_port);
+    AcquireSRWLockShared(&udp_flow_locks[hash]);
+
+    UDP_FLOW_CACHE_ENTRY *entry = udp_flow_cache[hash];
+    ULONGLONG now = GetTickCount64();
+    while (entry != NULL)
+    {
+        if (entry->src_ip == src_ip && entry->src_port == src_port)
+        {
+            if (now - entry->timestamp < UDP_FLOW_CACHE_TTL_MS)
+            {
+                *out_action = entry->action;
+                ReleaseSRWLockShared(&udp_flow_locks[hash]);
+                return TRUE;
+            }
+            break;
+        }
+        entry = entry->next;
+    }
+    ReleaseSRWLockShared(&udp_flow_locks[hash]);
+    return FALSE;
+}
+
+static void cache_udp_action(UINT32 src_ip, UINT16 src_port, RuleAction action)
+{
+    UINT32 hash = udp_flow_hash(src_ip, src_port);
+    AcquireSRWLockExclusive(&udp_flow_locks[hash]);
+
+    UDP_FLOW_CACHE_ENTRY *entry = udp_flow_cache[hash];
+    while (entry != NULL)
+    {
+        if (entry->src_ip == src_ip && entry->src_port == src_port)
+        {
+            entry->action = action;
+            entry->timestamp = GetTickCount64();
+            ReleaseSRWLockExclusive(&udp_flow_locks[hash]);
+            return;
+        }
+        entry = entry->next;
+    }
+
+    UDP_FLOW_CACHE_ENTRY *new_entry = (UDP_FLOW_CACHE_ENTRY *)malloc(sizeof(UDP_FLOW_CACHE_ENTRY));
+    if (new_entry != NULL)
+    {
+        new_entry->src_ip = src_ip;
+        new_entry->src_port = src_port;
+        new_entry->action = action;
+        new_entry->timestamp = GetTickCount64();
+        new_entry->next = udp_flow_cache[hash];
+        udp_flow_cache[hash] = new_entry;
+    }
+    ReleaseSRWLockExclusive(&udp_flow_locks[hash]);
+}
+
+static void clear_udp_flow_cache(void)
+{
+    for (int i = 0; i < UDP_FLOW_CACHE_SIZE; i++)
+    {
+        AcquireSRWLockExclusive(&udp_flow_locks[i]);
+        while (udp_flow_cache[i] != NULL)
+        {
+            UDP_FLOW_CACHE_ENTRY *to_free = udp_flow_cache[i];
+            udp_flow_cache[i] = udp_flow_cache[i]->next;
+            free(to_free);
+        }
+        ReleaseSRWLockExclusive(&udp_flow_locks[i]);
+    }
+}
+
+// ── Process Name Cache by PID ─────────────────────────────────────
+// Avoids OpenProcess + QueryFullProcessImageNameA kernel round-trips
+// for repeat connections from the same process.
+
+static UINT32 process_name_cache_hash(DWORD pid)
+{
+    return pid % PROCESS_NAME_CACHE_SIZE;
+}
+
+static BOOL get_cached_process_name(DWORD pid, char *out_name, DWORD name_size)
+{
+    UINT32 hash = process_name_cache_hash(pid);
+    AcquireSRWLockShared(&process_name_locks[hash]);
+
+    PROCESS_NAME_CACHE_ENTRY *entry = process_name_cache[hash];
+    ULONGLONG now = GetTickCount64();
+    while (entry != NULL)
+    {
+        if (entry->pid == pid)
+        {
+            if (now - entry->timestamp < PROCESS_NAME_CACHE_TTL_MS)
+            {
+                strncpy_s(out_name, name_size, entry->process_name, _TRUNCATE);
+                ReleaseSRWLockShared(&process_name_locks[hash]);
+                return TRUE;
+            }
+            break;
+        }
+        entry = entry->next;
+    }
+    ReleaseSRWLockShared(&process_name_locks[hash]);
+    return FALSE;
+}
+
+static void cache_process_name(DWORD pid, const char *process_name)
+{
+    UINT32 hash = process_name_cache_hash(pid);
+    AcquireSRWLockExclusive(&process_name_locks[hash]);
+
+    PROCESS_NAME_CACHE_ENTRY *entry = process_name_cache[hash];
+    while (entry != NULL)
+    {
+        if (entry->pid == pid)
+        {
+            strncpy_s(entry->process_name, MAX_PROCESS_NAME, process_name, _TRUNCATE);
+            entry->timestamp = GetTickCount64();
+            ReleaseSRWLockExclusive(&process_name_locks[hash]);
+            return;
+        }
+        entry = entry->next;
+    }
+
+    PROCESS_NAME_CACHE_ENTRY *new_entry = (PROCESS_NAME_CACHE_ENTRY *)malloc(sizeof(PROCESS_NAME_CACHE_ENTRY));
+    if (new_entry != NULL)
+    {
+        new_entry->pid = pid;
+        strncpy_s(new_entry->process_name, MAX_PROCESS_NAME, process_name, _TRUNCATE);
+        new_entry->timestamp = GetTickCount64();
+        new_entry->next = process_name_cache[hash];
+        process_name_cache[hash] = new_entry;
+    }
+    ReleaseSRWLockExclusive(&process_name_locks[hash]);
+}
+
+static void clear_process_name_cache(void)
+{
+    for (int i = 0; i < PROCESS_NAME_CACHE_SIZE; i++)
+    {
+        AcquireSRWLockExclusive(&process_name_locks[i]);
+        while (process_name_cache[i] != NULL)
+        {
+            PROCESS_NAME_CACHE_ENTRY *to_free = process_name_cache[i];
+            process_name_cache[i] = process_name_cache[i]->next;
+            free(to_free);
+        }
+        ReleaseSRWLockExclusive(&process_name_locks[i]);
+    }
 }
 
 static void cleanup_stale_connections(void)
@@ -2288,10 +2503,10 @@ static void cleanup_stale_connections(void)
     ULONGLONG now = GetTickCount64();
     int removed = 0;
 
-    // Process each hash bucket with minimal lock time
+    // Process each connection hash bucket with its own lock
     for (int i = 0; i < CONNECTION_HASH_SIZE; i++)
     {
-        WaitForSingleObject(lock, INFINITE);
+        AcquireSRWLockExclusive(&connection_locks[i]);
         CONNECTION_INFO **conn_ptr = &connection_hash_table[i];
 
         while (*conn_ptr != NULL)
@@ -2300,47 +2515,49 @@ static void cleanup_stale_connections(void)
             {
                 CONNECTION_INFO *to_free = *conn_ptr;
                 *conn_ptr = (*conn_ptr)->next;
-                ReleaseMutex(lock);
+                ReleaseSRWLockExclusive(&connection_locks[i]);
                 free(to_free);  // Free outside lock
                 removed++;
-                WaitForSingleObject(lock, INFINITE);
+                AcquireSRWLockExclusive(&connection_locks[i]);
             }
             else
             {
                 conn_ptr = &(*conn_ptr)->next;
             }
         }
-        ReleaseMutex(lock);
+        ReleaseSRWLockExclusive(&connection_locks[i]);
     }
 
-    // Cleanup PID cache with separate lock acquisitions
+    // Cleanup PID cache with per-bucket locks
+    // Use protocol-specific stale thresholds: UDP entries live much longer than TCP
     ULONGLONG now_cache = GetTickCount64();
     int cache_removed = 0;
     for (int i = 0; i < PID_CACHE_SIZE; i++)
     {
-        WaitForSingleObject(lock, INFINITE);
+        AcquireSRWLockExclusive(&pid_cache_locks[i]);
         PID_CACHE_ENTRY **entry_ptr = &pid_cache[i];
         while (*entry_ptr != NULL)
         {
-            if (now_cache - (*entry_ptr)->timestamp > 10000)
+            DWORD stale_ms = (*entry_ptr)->is_udp ? PID_CACHE_TTL_UDP_MS + 10000 : 10000;
+            if (now_cache - (*entry_ptr)->timestamp > stale_ms)
             {
                 PID_CACHE_ENTRY *to_free = *entry_ptr;
                 *entry_ptr = (*entry_ptr)->next;
-                ReleaseMutex(lock);
+                ReleaseSRWLockExclusive(&pid_cache_locks[i]);
                 free(to_free);  // Free outside lock
                 cache_removed++;
-                WaitForSingleObject(lock, INFINITE);
+                AcquireSRWLockExclusive(&pid_cache_locks[i]);
             }
             else
             {
                 entry_ptr = &(*entry_ptr)->next;
             }
         }
-        ReleaseMutex(lock);
+        ReleaseSRWLockExclusive(&pid_cache_locks[i]);
     }
 
-    // keep only last 100 for memory efficiency // 100 will keep speed upto the mark
-    WaitForSingleObject(lock, INFINITE);
+    // keep only last 100 for memory efficiency
+    AcquireSRWLockExclusive(&logged_lock);
     int logged_count = 0;
     LOGGED_CONNECTION *temp = logged_connections;
     while (temp != NULL)
@@ -2362,16 +2579,66 @@ static void cleanup_stale_connections(void)
             LOGGED_CONNECTION *to_free_list = temp->next;
             temp->next = NULL;  // Cut the list
 
+            ReleaseSRWLockExclusive(&logged_lock);
             while (to_free_list != NULL)
             {
                 LOGGED_CONNECTION *next = to_free_list->next;
                 free(to_free_list);
                 to_free_list = next;
             }
+            return;
         }
     }
 
-    ReleaseMutex(lock);
+    ReleaseSRWLockExclusive(&logged_lock);
+
+    // Periodically clean stale UDP flow cache entries
+    {
+        ULONGLONG flow_now = GetTickCount64();
+        for (int i = 0; i < UDP_FLOW_CACHE_SIZE; i++)
+        {
+            AcquireSRWLockExclusive(&udp_flow_locks[i]);
+            UDP_FLOW_CACHE_ENTRY **entry_ptr = &udp_flow_cache[i];
+            while (*entry_ptr != NULL)
+            {
+                if (flow_now - (*entry_ptr)->timestamp > UDP_FLOW_CACHE_TTL_MS * 2)
+                {
+                    UDP_FLOW_CACHE_ENTRY *to_free = *entry_ptr;
+                    *entry_ptr = (*entry_ptr)->next;
+                    free(to_free);
+                }
+                else
+                {
+                    entry_ptr = &(*entry_ptr)->next;
+                }
+            }
+            ReleaseSRWLockExclusive(&udp_flow_locks[i]);
+        }
+    }
+
+    // Periodically clean stale process name cache entries
+    {
+        ULONGLONG pn_now = GetTickCount64();
+        for (int i = 0; i < PROCESS_NAME_CACHE_SIZE; i++)
+        {
+            AcquireSRWLockExclusive(&process_name_locks[i]);
+            PROCESS_NAME_CACHE_ENTRY **entry_ptr = &process_name_cache[i];
+            while (*entry_ptr != NULL)
+            {
+                if (pn_now - (*entry_ptr)->timestamp > PROCESS_NAME_CACHE_TTL_MS * 2)
+                {
+                    PROCESS_NAME_CACHE_ENTRY *to_free = *entry_ptr;
+                    *entry_ptr = (*entry_ptr)->next;
+                    free(to_free);
+                }
+                else
+                {
+                    entry_ptr = &(*entry_ptr)->next;
+                }
+            }
+            ReleaseSRWLockExclusive(&process_name_locks[i]);
+        }
+    }
 }
 
 JACKBRIDGE_API UINT32 JackBridge_AddRule(const char* process_name, const char* target_hosts, const char* target_ports, RuleProtocol protocol, RuleAction action)
@@ -2672,11 +2939,13 @@ JACKBRIDGE_API BOOL JackBridge_SetProxyConfig(ProxyType type, const char* proxy_
     if (proxy_ip == NULL || proxy_ip[0] == '\0' || proxy_port == 0)
         return FALSE;
 
-    // Validate that the hostname/IP can be resolved
-    if (resolve_hostname(proxy_ip) == 0)
+    // Validate that the hostname/IP can be resolved, and cache the resolved IP
+    UINT32 resolved = resolve_hostname(proxy_ip);
+    if (resolved == 0)
         return FALSE;
 
     strncpy_s(g_proxy_host, sizeof(g_proxy_host), proxy_ip, _TRUNCATE);
+    g_proxy_host_ip = resolved;  // cache once, reuse in every connection_handler
     g_proxy_port = proxy_port;
     g_proxy_type = (type == PROXY_TYPE_HTTP) ? PROXY_TYPE_HTTP : PROXY_TYPE_SOCKS5;
 
@@ -2742,10 +3011,10 @@ JACKBRIDGE_API void JackBridge_ClearConnectionLogs(void)
 // Check if connection already logged (deduplication)
 static BOOL is_connection_already_logged(DWORD pid, UINT32 dest_ip, UINT16 dest_port, RuleAction action)
 {
-    BOOL found = FALSE;
-    WaitForSingleObject(lock, INFINITE);
+    AcquireSRWLockShared(&logged_lock);
 
     LOGGED_CONNECTION *logged = logged_connections;
+    BOOL found = FALSE;
     while (logged != NULL)
     {
         if (logged->pid == pid &&
@@ -2759,19 +3028,14 @@ static BOOL is_connection_already_logged(DWORD pid, UINT32 dest_ip, UINT16 dest_
         logged = logged->next;
     }
 
-    ReleaseMutex(lock);
+    ReleaseSRWLockShared(&logged_lock);
     return found;
 }
 
 
-// Memory usage and cpu usage are limitation of the JackBridge arch
-// Relay server takes huge amount of memory and cpu and add extra hops
-// hops can cuase slight delay in network speed
-// relay server are ippoved to process it as fast as possible with minimal impact on memory usage
-
 static void add_logged_connection(DWORD pid, UINT32 dest_ip, UINT16 dest_port, RuleAction action)
 {
-    WaitForSingleObject(lock, INFINITE);
+    AcquireSRWLockExclusive(&logged_lock);
 
     int count = 0;
     LOGGED_CONNECTION *temp = logged_connections;
@@ -2794,14 +3058,14 @@ static void add_logged_connection(DWORD pid, UINT32 dest_ip, UINT16 dest_port, R
             LOGGED_CONNECTION *to_free_list = temp->next;
             temp->next = NULL;
 
-            ReleaseMutex(lock);
+            ReleaseSRWLockExclusive(&logged_lock);
             while (to_free_list != NULL)
             {
                 LOGGED_CONNECTION *next = to_free_list->next;
                 free(to_free_list);
                 to_free_list = next;
             }
-            WaitForSingleObject(lock, INFINITE);
+            AcquireSRWLockExclusive(&logged_lock);
         }
     }
 
@@ -2816,12 +3080,12 @@ static void add_logged_connection(DWORD pid, UINT32 dest_ip, UINT16 dest_port, R
         logged_connections = logged;
     }
 
-    ReleaseMutex(lock);
+    ReleaseSRWLockExclusive(&logged_lock);
 }
 
 static void clear_logged_connections(void)
 {
-    WaitForSingleObject(lock, INFINITE);
+    AcquireSRWLockExclusive(&logged_lock);
 
     while (logged_connections != NULL)
     {
@@ -2830,7 +3094,7 @@ static void clear_logged_connections(void)
         free(to_free);
     }
 
-    ReleaseMutex(lock);
+    ReleaseSRWLockExclusive(&logged_lock);
 }
 
 //  cache pid
@@ -2847,18 +3111,19 @@ static DWORD get_cached_pid(UINT32 src_ip, UINT16 src_port, BOOL is_udp)
 {
     UINT32 hash = pid_cache_hash(src_ip, src_port, is_udp);
     ULONGLONG current_time = GetTickCount64();
-    DWORD pid = 0;
+    DWORD ttl = is_udp ? PID_CACHE_TTL_UDP_MS : PID_CACHE_TTL_MS;
 
-    WaitForSingleObject(lock, INFINITE);
+    AcquireSRWLockShared(&pid_cache_locks[hash]);
 
     PID_CACHE_ENTRY *entry = pid_cache[hash];
+    DWORD pid = 0;
     while (entry != NULL)
     {
         if (entry->src_ip == src_ip &&
             entry->src_port == src_port &&
             entry->is_udp == is_udp)
         {
-            if (current_time - entry->timestamp < PID_CACHE_TTL_MS)
+            if (current_time - entry->timestamp < ttl)
             {
                 pid = entry->pid;
                 break;
@@ -2871,7 +3136,7 @@ static DWORD get_cached_pid(UINT32 src_ip, UINT16 src_port, BOOL is_udp)
         entry = entry->next;
     }
 
-    ReleaseMutex(lock);
+    ReleaseSRWLockShared(&pid_cache_locks[hash]);
     return pid;
 }
 
@@ -2880,7 +3145,7 @@ static void cache_pid(UINT32 src_ip, UINT16 src_port, DWORD pid, BOOL is_udp)
     UINT32 hash = pid_cache_hash(src_ip, src_port, is_udp);
     ULONGLONG current_time = GetTickCount64();
 
-    WaitForSingleObject(lock, INFINITE);
+    AcquireSRWLockExclusive(&pid_cache_locks[hash]);
 
     PID_CACHE_ENTRY *entry = pid_cache[hash];
     while (entry != NULL)
@@ -2891,7 +3156,7 @@ static void cache_pid(UINT32 src_ip, UINT16 src_port, DWORD pid, BOOL is_udp)
         {
             entry->pid = pid;
             entry->timestamp = current_time;
-            ReleaseMutex(lock);
+            ReleaseSRWLockExclusive(&pid_cache_locks[hash]);
             return;
         }
         entry = entry->next;
@@ -2909,24 +3174,24 @@ static void cache_pid(UINT32 src_ip, UINT16 src_port, DWORD pid, BOOL is_udp)
         pid_cache[hash] = new_entry;
     }
 
-    ReleaseMutex(lock);
+    ReleaseSRWLockExclusive(&pid_cache_locks[hash]);
 }
 
 static void clear_pid_cache(void)
 {
-    WaitForSingleObject(lock, INFINITE);
-
     for (int i = 0; i < PID_CACHE_SIZE; i++)
     {
+        AcquireSRWLockExclusive(&pid_cache_locks[i]);
+
         while (pid_cache[i] != NULL)
         {
             PID_CACHE_ENTRY *to_free = pid_cache[i];
             pid_cache[i] = pid_cache[i]->next;
             free(to_free);
         }
-    }
 
-    ReleaseMutex(lock);
+        ReleaseSRWLockExclusive(&pid_cache_locks[i]);
+    }
 }
 
 // Dedicated cleanup thread - runs independently without blocking packet processing
@@ -2956,6 +3221,9 @@ static void update_has_active_rules(void)
         }
         rule = rule->next;
     }
+
+    // Rule changes invalidate cached UDP flow decisions
+    clear_udp_flow_cache();
 }
 
 JACKBRIDGE_API BOOL JackBridge_Start(void)
@@ -2967,16 +3235,6 @@ JACKBRIDGE_API BOOL JackBridge_Start(void)
         return FALSE;
 
     log_message("JackBridge_Start: initializing...");
-
-    if (lock == NULL)
-    {
-        lock = CreateMutex(NULL, FALSE, NULL);
-        if (lock == NULL)
-        {
-            log_message("JackBridge_Start: FAILED to create mutex");
-            return FALSE;
-        }
-    }
 
     log_message("JackBridge_Start: scanning for available relay ports (34010-34209)...");
     if (!choose_local_relay_ports())
@@ -3146,24 +3404,25 @@ JACKBRIDGE_API BOOL JackBridge_Stop(void)
         udp_relay_thread = NULL;
     }
 
-    WaitForSingleObject(lock, INFINITE);
-    // free all connections in hash table
-    // avoid unwanted data and free the memory
+    // free all connections in hash table with per-bucket locks
     for (int i = 0; i < CONNECTION_HASH_SIZE; i++)
     {
+        AcquireSRWLockExclusive(&connection_locks[i]);
         while (connection_hash_table[i] != NULL)
         {
             CONNECTION_INFO *to_free = connection_hash_table[i];
             connection_hash_table[i] = connection_hash_table[i]->next;
             free(to_free);
         }
+        ReleaseSRWLockExclusive(&connection_locks[i]);
     }
-    ReleaseMutex(lock);
 
     // Clear logged connections list
     clear_logged_connections();
 
     clear_pid_cache();
+    clear_udp_flow_cache();
+    clear_process_name_cache();
 
     log_message("JackBridge stopped");
 
@@ -3373,11 +3632,6 @@ BOOL WINAPI DllMain(HINSTANCE hinstDLL, DWORD fdwReason, LPVOID lpReserved)
         case DLL_PROCESS_DETACH:
             if (running)
                 JackBridge_Stop();
-            if (lock != NULL)
-            {
-                CloseHandle(lock);
-                lock = NULL;
-            }
             while (rules_list != NULL)
             {
                 PROCESS_RULE *to_free = rules_list;
