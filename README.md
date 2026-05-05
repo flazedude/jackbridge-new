@@ -1,151 +1,160 @@
-# JackBridge
+# JackBridge v3.0
 
-JackBridge is a Windows-focused custom build based on [ProxyBridge](https://github.com/InterceptSuite/ProxyBridge) by InterceptSuite. It keeps the original idea of routing selected application traffic through a proxy, then adds a cleaner JackBridge desktop workflow, portable configuration, rule priority, and day-to-day usability improvements.
+Route Windows application traffic through HTTP or SOCKS5 proxies with a modern desktop UI. JackBridge uses native packet interception (WinDivert) and gives you fine-grained process-level control.
 
-This repository is based on ProxyBridge and continues to credit the original project and authors. JackBridge is an improved/customized version maintained by Jack Wang.
+JackBridge is a custom build maintained by Jack Wang.
 
-## What JackBridge Does
+---
 
-JackBridge lets you route traffic from specific Windows processes through an HTTP or SOCKS5 proxy while leaving other applications direct. It uses a native Windows interception layer with WinDivert and a desktop UI for managing proxy settings, process rules, and live activity.
+## Features
 
-Common examples:
+### Modern Desktop UI
 
-- Route `chrome.exe` through a SOCKS5 proxy.
-- Keep `Codex.exe` direct while proxying everything else.
-- Add rules from observed active processes.
-- Use a portable folder that can be moved between machines.
+- **Apple-inspired dark design** — clean interface with acrylic blur, system-native fonts, and a single accent color
+- **Sidebar navigation** — Home, Connections, Activity, Rules, and Settings in one window
+- **Dashboard** — at-a-glance proxy status, active rule count, engine type, and recent activity
+- **System tray** — minimize to tray, restore with a click, proxy status always visible
+- **Responsive layout** — 1100x650 default, 900x600 minimum
 
-## JackBridge v1.5 Highlights
+### Proxy Engine
 
-- Rebranded ProxyBridge into JackBridge.
-- Portable `config.json` stored beside `JackBridge.exe`.
-- Clean single-file app layout with native dependencies in `native\`.
-- Multiple JackBridge instances allowed, so beta builds do not hijack the stable daily driver.
-- Main proxy on/off control changed into a graphical switch.
-- Added Rules and Settings shortcut buttons to the main toolbar.
-- Removed the update-check UI.
-- Updated About text to: `Based on: ProxyBridge, improved by Jack Wang`.
-- Added custom JackBridge app icon and proxy/on-off assets.
-- Added process-rule priority ordering.
-- Split rules into `Active rules` and `Static rules`.
-- Active rules are handled before static rules.
-- Rule priority starts at `1` inside each section.
-- Improved process rules UI with a dedicated popup window.
-- Improved responsiveness so action buttons do not fall off-screen.
-- Added process discovery from activity so observed processes can be added as rules quickly.
-- Deduplicated observed active processes.
-- Kept traffic/activity logging focused inside the main UI.
+- **External proxy mode** — route through any HTTP or SOCKS5 proxy
+- **Built-in proxy engine** — optional Mihomo-based embedded proxy, no external server needed
+- **One-click toggle** — graphical on/off switch from the dashboard or tray
+- **Packet-level interception** — WinDivert kernel driver captures traffic before it hits the network
 
-## Changes Compared With ProxyBridge
+### Rules & Routing
 
-ProxyBridge provided the original cross-platform proxy routing foundation. JackBridge v1.5 focuses on making the Windows desktop experience easier to use as a daily driver.
+- **Process-based rules** — target specific executables (`chrome.exe`, `Codex.exe`, etc.)
+- **Rule priority model** — rules evaluated top-to-bottom; earlier rules win
+- **Active vs Static rules** — active rules take precedence over static catch-alls
+- **Quick-add from activity** — right-click any observed process and turn it into a rule
+- **Wildcard rules** — `*` matches all processes for global proxy routing
 
-Major differences:
+### Activity & Connections
 
-- **Branding:** JackBridge name, title, icon, package names, and About text.
-- **Portability:** configuration is stored in the executable folder instead of AppData.
-- **Packaging:** release folder is simplified to `JackBridge.exe` plus subfolders.
-- **Rule priority:** top rules are handled first, making direct exceptions possible before global proxy rules.
-- **Rule sections:** active rules are prioritized above static/global rules.
-- **UI workflow:** rules/settings use cleaner panels or popup windows instead of scattered separate settings boxes.
-- **Proxy toggle:** graphical on/off switch with generated icons.
-- **Process selection:** active/observed processes can be turned into rules more quickly.
-- **Multiple instances:** JackBridge-specific builds can run side by side without flashing an already-running instance.
-- **Update removal:** update-check UI was removed for a cleaner custom build.
+- **Live traffic view** — see every intercepted packet in real time
+- **Auto-scroll** — automatically follows new activity as it arrives
+- **Connection tracking** — monitor active connections, source/destination, and bytes transferred
+- **Geo asset check** — geographic verification of connection endpoints
 
-## Portable Layout
+### Portability & Config
 
-The v1.5 package is designed to be copied as a folder:
+- **Portable config** — `config.json` stored beside `JackBridge.exe`, copy the folder to another machine
+- **Multiple instances** — run beta and stable builds side-by-side without conflicts
+- **Settings persistence** — proxy config, rules, and preferences saved across restarts
 
-```text
-JackBridge v1.5\
+### Updates & Diagnostics
+
+- **Update checking** — optional check for new releases with desktop notification
+- **Activity logging** — detailed traffic logs for debugging
+- **Error resilience** — handles driver load failures gracefully
+
+---
+
+## Installation
+
+Download the latest release from the [Releases](https://github.com/flazedude/jackbridge-new/releases) page.
+
+Extract the ZIP and run `JackBridge.exe`. On first launch you may be prompted to install the WinDivert driver — accept to enable traffic interception.
+
+```
+JackBridge\
   JackBridge.exe
-  config.json
-  native\
-    JackBridgeCore.dll
-    WinDivert.dll
-    WinDivert64.sys
-    WinDivert-LICENSE.txt
+  JackBridge_CLI.exe
+  JackBridgeCore.dll
+  WinDivert.dll
+  WinDivert64.sys
+  config.json          (created on first run)
 ```
 
-`config.json` is created after first run. Copying the folder to another machine brings the proxy settings and rules with it.
+---
 
-## Rule Priority Model
+## Usage
 
-Rules are evaluated from top to bottom.
+### Quick Start
 
-Example:
+1. Launch `JackBridge.exe`
+2. Go to **Settings** and configure your proxy (HTTP or SOCKS5)
+3. Go to **Rules** and add process rules (e.g., `chrome.exe` → Proxy)
+4. Click the **proxy toggle** on the Home dashboard to enable
 
-```text
+### Rule Examples
+
+```
 Active rules
-  1. Codex.exe -> DIRECT
+  1. Codex.exe    → DIRECT    (bypass proxy)
+  2. chrome.exe   → PROXY     (route through proxy)
 
 Static rules
-  1. * -> PROXY
+  1. *            → DIRECT    (everything else direct)
 ```
 
-In this setup, `Codex.exe` stays direct while the static catch-all rule sends everything else through the configured proxy.
+In this setup, `Codex.exe` stays direct (priority 1), `chrome.exe` goes through the proxy, and the wildcard `*` catches everything else direct.
 
-Rule sections:
+### CLI
 
-- **Active rules:** specific app/process rules. These are handled first.
-- **Static rules:** always-on or broader rules, such as global `*` proxy routing.
+`JackBridge_CLI.exe` provides command-line access for scripting:
+
+```
+JackBridge_CLI --help
+```
+
+---
 
 ## Building
 
-Requirements:
+**Requirements:**
 
 - Windows
 - .NET 10 SDK
-- MinGW/GCC for building the native Windows core
-- WinDivert files under `Windows\vendor\WinDivert-2.2.2-A\`
+- GCC (MinGW-w64) for the native core
+- WinDivert 2.2.2-A (place at `C:\WinDivert-2.2.2-A` or update `Windows\compile.ps1`)
 
-Build the GUI:
-
-```powershell
-dotnet build Windows\gui\JackBridge.GUI.csproj --no-restore
-```
-
-Publish a self-contained Windows build:
+**Quick build:**
 
 ```powershell
-dotnet publish Windows\gui\JackBridge.GUI.csproj -c Release -r win-x64 --self-contained true --no-restore -o "build\JackBridge v1.5" /p:PublishAot=false /p:PublishTrimmed=false /p:PublishSingleFile=true /p:IncludeNativeLibrariesForSelfExtract=true /p:EnableCompressionInSingleFile=true /p:DebugType=None /p:DebugSymbols=false
+cd Windows
+.\compile.ps1 -NoSign
 ```
 
-Build the native core:
+**Manual build:**
 
 ```powershell
-gcc -shared -O2 -DJACKBRIDGE_EXPORTS -o "build\JackBridge v1.5\native\JackBridgeCore.dll" "Windows\src\JackBridge.c" -I"Windows\src" -I"Windows\vendor\WinDivert-2.2.2-A\include" -L"Windows\vendor\WinDivert-2.2.2-A\x64" -lWinDivert -lws2_32 -liphlpapi -lpsapi
+# Native core DLL
+gcc -shared -O2 -DJACKBRIDGE_EXPORTS -I"C:\WinDivert-2.2.2-A\include" -L"C:\WinDivert-2.2.2-A\x64" `
+    -o JackBridgeCore.dll src\JackBridge.c -lWinDivert -lws2_32 -liphlpapi
+
+# GUI
+dotnet publish gui\JackBridge.GUI.csproj -c Release -r win-x64 --self-contained `
+    -p:PublishAot=false -p:PublishTrimmed=false -o publish\gui
+
+# CLI
+dotnet publish cli\JackBridge.CLI.csproj -c Release -r win-x64 --self-contained `
+    -p:PublishAot=false -p:PublishTrimmed=false -o publish\cli
 ```
 
-Then copy:
+Copy `WinDivert.dll`, `WinDivert64.sys` from `C:\WinDivert-2.2.2-A\x64\` into the output folder alongside the built binaries.
 
-```text
-Windows\vendor\WinDivert-2.2.2-A\x64\WinDivert.dll
-Windows\vendor\WinDivert-2.2.2-A\x64\WinDivert64.sys
-Windows\vendor\WinDivert-2.2.2-A\LICENSE
-```
+---
 
-into:
+## Tech Stack
 
-```text
-build\JackBridge v1.5\native\
-```
+| Layer | Technology |
+|-------|-----------|
+| UI Framework | Avalonia 11.3 |
+| Language | C# (.NET 10) |
+| Native Core | C (GCC/MinGW-w64) |
+| Packet Interception | WinDivert 2.2 |
+| Built-in Proxy | Mihomo (Clash Meta) |
+| Installer | NSIS |
 
-## Credits
-
-JackBridge is based on [ProxyBridge](https://github.com/InterceptSuite/ProxyBridge) by InterceptSuite.
-
-Original project:
-
-- ProxyBridge: https://github.com/InterceptSuite/ProxyBridge
-- Original authors/maintainers: InterceptSuite
-
-JackBridge custom improvements:
-
-- Improved by Jack Wang
-- JackBridge rebrand, portable Windows packaging, rule priority, UI cleanup, and workflow changes
+---
 
 ## License
 
 This project is derived from ProxyBridge. See the repository license and retain upstream attribution when redistributing modified builds.
+
+---
+
+*Based on [ProxyBridge](https://github.com/InterceptSuite/ProxyBridge) by InterceptSuite.*
