@@ -1,4 +1,4 @@
-# JackBridge v3.0
+# JackBridge v3.6
 
 Route Windows application traffic through HTTP or SOCKS5 proxies with a modern desktop UI. JackBridge uses native packet interception (WinDivert) and gives you fine-grained process-level control.
 
