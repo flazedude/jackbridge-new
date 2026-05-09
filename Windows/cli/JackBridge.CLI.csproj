@@ -6,8 +6,8 @@
     <ImplicitUsings>enable</ImplicitUsings>
     <Nullable>enable</Nullable>
     <AssemblyName>JackBridge_CLI</AssemblyName>
-    <Version>3.5.0</Version>
-    <PublishAot>true</PublishAot>
+    <Version>3.6.0</Version>
+    <PublishAot>false</PublishAot>
     <InvariantGlobalization>false</InvariantGlobalization>
     <SelfContained>true</SelfContained>
 
@@ -21,8 +21,7 @@
     <MetadataUpdaterSupport>false</MetadataUpdaterSupport>
     <StackTraceSupport>false</StackTraceSupport>
 
-    <PublishTrimmed>true</PublishTrimmed>
-    <TrimMode>link</TrimMode>
+    <PublishTrimmed>false</PublishTrimmed>
   </PropertyGroup>
 
   <ItemGroup>

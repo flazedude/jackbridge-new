@@ -176,7 +176,7 @@
                                 CornerRadius="3"
                                 Padding="4,1"
                                 VerticalAlignment="Center">
-                            <TextBlock Text="v3.5"
+                            <TextBlock Text="v3.6"
                                        Foreground="#FFFFFFFF"
                                        FontSize="9"
                                        FontWeight="600"/>

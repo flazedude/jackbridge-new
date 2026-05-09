@@ -21,7 +21,7 @@ public class MainWindowViewModel : ViewModelBase
     private const int MAX_CONNECTION_LOG_LINES = 100;
     private const int MAX_ACTIVITY_LOG_LINES = 100;
 
-    private string _title = "JackBridge v3.5";
+    private string _title = "JackBridge v3.6";
     private int _selectedTabIndex;
     private string _connectionsLog = "";
     private string _activityLog = "";

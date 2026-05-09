@@ -16,9 +16,9 @@
 #define LOCAL_PROXY_PORT 34010
 #define LOCAL_UDP_RELAY_PORT 34011  // its running UDP port still make sure to not run on same port as TCP, opening same port and tcp and udp cause issue and handling port at relay server response injection
 #define MAX_PROCESS_NAME 256
-#define VERSION "3.5.0"
+#define VERSION "3.6.0"
 #define PID_CACHE_SIZE 1024
-#define PID_CACHE_TTL_MS 1000
+#define PID_CACHE_TTL_MS 5000
 #define PID_CACHE_TTL_UDP_MS 30000
 #define NUM_PACKET_THREADS 2
 #define CONNECTION_HASH_SIZE 256
@@ -115,6 +115,23 @@ static SRWLOCK connection_locks[CONNECTION_HASH_SIZE];  // one per hash bucket
 static SRWLOCK pid_cache_locks[PID_CACHE_SIZE];         // one per cache bucket
 static SRWLOCK logged_lock = SRWLOCK_INIT;              // protects logged_connections list
 static PROCESS_RULE *rules_list = NULL;
+
+// TCP direct cache — skips rule engine for repeat TCP packets from bypassed proxy processes.
+// Without this, every single packet from an external proxy (mihomo/clash-verge) goes through
+// the full check_process_rule → PID lookup → kernel table scan path, spiking CPU for both
+// JackBridge AND the external proxy.
+#define TCP_DIRECT_CACHE_SIZE 512
+#define TCP_DIRECT_CACHE_TTL_MS 60000
+
+typedef struct TCP_DIRECT_CACHE_ENTRY {
+    UINT32 src_ip;
+    UINT16 src_port;
+    ULONGLONG timestamp;
+    struct TCP_DIRECT_CACHE_ENTRY *next;
+} TCP_DIRECT_CACHE_ENTRY;
+
+static TCP_DIRECT_CACHE_ENTRY *tcp_direct_cache[TCP_DIRECT_CACHE_SIZE] = {NULL};
+static SRWLOCK tcp_direct_locks[TCP_DIRECT_CACHE_SIZE];
 
 // UDP flow action cache — skips rule engine for repeat UDP packets from DIRECT flows
 static UDP_FLOW_CACHE_ENTRY *udp_flow_cache[UDP_FLOW_CACHE_SIZE] = {NULL};
@@ -374,6 +391,9 @@ static DWORD get_cached_pid(UINT32 src_ip, UINT16 src_port, BOOL is_udp);
 static BOOL get_cached_udp_action(UINT32 src_ip, UINT16 src_port, RuleAction *out_action);
 static void cache_udp_action(UINT32 src_ip, UINT16 src_port, RuleAction action);
 static void clear_udp_flow_cache(void);
+static BOOL is_tcp_direct_cached(UINT32 src_ip, UINT16 src_port);
+static void cache_tcp_direct(UINT32 src_ip, UINT16 src_port);
+static void clear_tcp_direct_cache(void);
 static BOOL get_cached_process_name(DWORD pid, char *out_name, DWORD name_size);
 static void cache_process_name(DWORD pid, const char *process_name);
 static void clear_process_name_cache(void);
@@ -655,6 +675,14 @@ static DWORD WINAPI packet_processor(LPVOID arg)
 
                 // avoid rule pocess and packet process if no rules
                 if (!g_has_active_rules && g_connection_callback == NULL)
+                {
+                    WinDivertSend(windivert_handle, packet, packet_len, NULL, &addr);
+                    continue;
+                }
+
+                // Fast path: if this connection was previously identified as DIRECT
+                // (e.g. from a bypassed proxy process), skip the entire rule engine.
+                if (is_tcp_direct_cached(src_ip, src_port))
                 {
                     WinDivertSend(windivert_handle, packet, packet_len, NULL, &addr);
                     continue;
@@ -1346,18 +1374,25 @@ static RuleAction check_process_rule(UINT32 src_ip, UINT16 src_port, UINT32 dest
     }
 
     // Hard-bypass proxy core processes to prevent double-proxy loops.
-    // TCP only — UDP (DNS) is allowed through normal rules so blocked DNS
-    // servers can still be reached via the proxy without creating a loop
-    // (mihomo's upstream DNS forwarding uses DoH/TCP, not UDP).
+    // Applies to both TCP and UDP — any traffic from the external proxy process
+    // must go DIRECT or it creates a feedback loop that spikes CPU for both
+    // JackBridge and the external proxy.
     const char *process_filename = extract_filename(process_name);
-    if (!is_udp &&
-        (_stricmp(process_filename, "mihomo.exe") == 0 ||
-         _stricmp(process_filename, "jackbridge-mihomo.exe") == 0 ||
-         _stricmp(process_filename, "verge-mihomo.exe") == 0 ||
-         _stricmp(process_filename, "clash-verge.exe") == 0 ||
-         _stricmp(process_filename, "clash-core-service.exe") == 0 ||
-         _stricmp(process_filename, "clash-core-service") == 0))
+    if (_stricmp(process_filename, "mihomo.exe") == 0 ||
+        _stricmp(process_filename, "jackbridge-mihomo.exe") == 0 ||
+        _stricmp(process_filename, "verge-mihomo.exe") == 0 ||
+        _stricmp(process_filename, "clash-verge.exe") == 0 ||
+        _stricmp(process_filename, "clash-core-service.exe") == 0 ||
+        _stricmp(process_filename, "clash-core-service") == 0 ||
+        _stricmp(process_filename, "verge-mihomo-core") == 0 ||
+        _stricmp(process_filename, "clash-meta.exe") == 0 ||
+        _stricmp(process_filename, "mihomo-core.exe") == 0 ||
+        _stricmp(process_filename, "clash-nyanpasu.exe") == 0)
     {
+        // Cache TCP connections from bypassed processes so subsequent
+        // data packets skip the rule engine entirely.
+        if (!is_udp)
+            cache_tcp_direct(src_ip, src_port);
         return RULE_ACTION_DIRECT;
     }
 
@@ -2196,9 +2231,8 @@ static DWORD WINAPI transfer_handler(LPVOID arg)
         FD_SET(sock1, &readfds);  // client
         FD_SET(sock2, &readfds);  // proxy
 
-        // short timeout for responsive bidirectional transfer
-        timeout.tv_sec = 0;
-        timeout.tv_usec = 50000;  // 50ms
+        timeout.tv_sec = 1;
+        timeout.tv_usec = 0;  // 1s — select returns immediately on data, timeout only matters for idle connections
 
         int ready = select(0, &readfds, NULL, NULL, &timeout);
 
@@ -2423,6 +2457,90 @@ static void clear_udp_flow_cache(void)
             free(to_free);
         }
         ReleaseSRWLockExclusive(&udp_flow_locks[i]);
+    }
+}
+
+// ── TCP Direct Connection Cache ──────────────────────────────────────
+// When a connection is identified as belonging to a bypassed proxy process
+// (mihomo, clash-verge, etc.), cache the (src_ip, src_port) → DIRECT decision.
+// This prevents every subsequent data packet from re-running the full rule engine
+// (PID lookup → kernel table scan → process name check → bypass match) —
+// which would otherwise spike CPU for both JackBridge and the external proxy.
+
+static UINT32 tcp_direct_cache_hash(UINT32 src_ip, UINT16 src_port)
+{
+    return (src_ip ^ (src_port << 16 | src_port)) % TCP_DIRECT_CACHE_SIZE;
+}
+
+static BOOL is_tcp_direct_cached(UINT32 src_ip, UINT16 src_port)
+{
+    UINT32 hash = tcp_direct_cache_hash(src_ip, src_port);
+    AcquireSRWLockShared(&tcp_direct_locks[hash]);
+
+    TCP_DIRECT_CACHE_ENTRY *entry = tcp_direct_cache[hash];
+    ULONGLONG now = GetTickCount64();
+    while (entry != NULL)
+    {
+        if (entry->src_ip == src_ip && entry->src_port == src_port)
+        {
+            if (now - entry->timestamp < TCP_DIRECT_CACHE_TTL_MS)
+            {
+                ReleaseSRWLockShared(&tcp_direct_locks[hash]);
+                return TRUE;
+            }
+            ReleaseSRWLockShared(&tcp_direct_locks[hash]);
+            return FALSE;
+        }
+        entry = entry->next;
+    }
+    ReleaseSRWLockShared(&tcp_direct_locks[hash]);
+    return FALSE;
+}
+
+static void cache_tcp_direct(UINT32 src_ip, UINT16 src_port)
+{
+    UINT32 hash = tcp_direct_cache_hash(src_ip, src_port);
+    AcquireSRWLockExclusive(&tcp_direct_locks[hash]);
+
+    TCP_DIRECT_CACHE_ENTRY *entry = tcp_direct_cache[hash];
+    while (entry != NULL)
+    {
+        if (entry->src_ip == src_ip && entry->src_port == src_port)
+        {
+            entry->timestamp = GetTickCount64();
+            ReleaseSRWLockExclusive(&tcp_direct_locks[hash]);
+            return;
+        }
+        entry = entry->next;
+    }
+
+    TCP_DIRECT_CACHE_ENTRY *new_entry = (TCP_DIRECT_CACHE_ENTRY *)malloc(sizeof(TCP_DIRECT_CACHE_ENTRY));
+    if (new_entry == NULL)
+    {
+        ReleaseSRWLockExclusive(&tcp_direct_locks[hash]);
+        return;
+    }
+
+    new_entry->src_ip = src_ip;
+    new_entry->src_port = src_port;
+    new_entry->timestamp = GetTickCount64();
+    new_entry->next = tcp_direct_cache[hash];
+    tcp_direct_cache[hash] = new_entry;
+    ReleaseSRWLockExclusive(&tcp_direct_locks[hash]);
+}
+
+static void clear_tcp_direct_cache(void)
+{
+    for (int i = 0; i < TCP_DIRECT_CACHE_SIZE; i++)
+    {
+        AcquireSRWLockExclusive(&tcp_direct_locks[i]);
+        while (tcp_direct_cache[i] != NULL)
+        {
+            TCP_DIRECT_CACHE_ENTRY *to_free = tcp_direct_cache[i];
+            tcp_direct_cache[i] = tcp_direct_cache[i]->next;
+            free(to_free);
+        }
+        ReleaseSRWLockExclusive(&tcp_direct_locks[i]);
     }
 }
 
@@ -3315,7 +3433,7 @@ JACKBRIDGE_API BOOL JackBridge_Start(void)
 
     log_message("JackBridge_Start: WinDivert handle opened successfully.");
     WinDivertSetParam(windivert_handle, WINDIVERT_PARAM_QUEUE_LENGTH, 16384);
-    WinDivertSetParam(windivert_handle, WINDIVERT_PARAM_QUEUE_TIME, 16);  // 16ms batching for lower CPU
+    WinDivertSetParam(windivert_handle, WINDIVERT_PARAM_QUEUE_TIME, 32);  // 32ms batching for lower CPU
 
     log_message("JackBridge_Start: creating %d packet processor threads...", NUM_PACKET_THREADS);
     for (int i = 0; i < NUM_PACKET_THREADS; i++)
@@ -3429,6 +3547,7 @@ JACKBRIDGE_API BOOL JackBridge_Stop(void)
 
     clear_pid_cache();
     clear_udp_flow_cache();
+    clear_tcp_direct_cache();
     clear_process_name_cache();
 
     log_message("JackBridge stopped");

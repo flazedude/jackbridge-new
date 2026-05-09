@@ -7,25 +7,20 @@
     <ApplicationManifest>app.manifest</ApplicationManifest>
     <AssemblyName>JackBridge</AssemblyName>
     <RootNamespace>JackBridge.GUI</RootNamespace>
-    <Version>3.5.0</Version>
-    <AssemblyVersion>3.5.0</AssemblyVersion>
-    <FileVersion>3.5.0</FileVersion>
-    <InformationalVersion>3.5.0</InformationalVersion>
+    <Version>3.6.0</Version>
+    <AssemblyVersion>3.6.0</AssemblyVersion>
+    <FileVersion>3.6.0</FileVersion>
+    <InformationalVersion>3.6.0</InformationalVersion>
     <IncludeSourceRevisionInInformationalVersion>false</IncludeSourceRevisionInInformationalVersion>
     <ApplicationIcon>Assets\logo.ico</ApplicationIcon>
     <Company>Jack Wang</Company>
-    <Product>JackBridge v3.5</Product>
+    <Product>JackBridge v3.6</Product>
     <Copyright>Copyright © 2026 Jack Wang</Copyright>
     <Description>Universal proxy client for Windows applications</Description>
     <NeutralLanguage>en-US</NeutralLanguage>
-    <PublishAot>true</PublishAot>
+    <PublishAot>false</PublishAot>
     <InvariantGlobalization>false</InvariantGlobalization>
-    <PublishAot>true</PublishAot>
-    <PublishTrimmed>true</PublishTrimmed>
-    <TrimMode>link</TrimMode>
-    <IlcOptimizationPreference>Speed</IlcOptimizationPreference>
-    <IlcGenerateDgmlFile>false</IlcGenerateDgmlFile>
-    <IlcFoldIdenticalMethodBodies>true</IlcFoldIdenticalMethodBodies>
+    <PublishTrimmed>false</PublishTrimmed>
     <EventSourceSupport>false</EventSourceSupport>
     <UseSystemResourceKeys>true</UseSystemResourceKeys>
   </PropertyGroup>
